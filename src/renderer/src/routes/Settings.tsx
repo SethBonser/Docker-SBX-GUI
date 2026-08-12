@@ -1,8 +1,17 @@
 import { Badge } from '@renderer/components/ui/Badge'
 import { Button } from '@renderer/components/ui/Button'
 import { Card } from '@renderer/components/ui/Card'
-import { useHealth } from '@renderer/state/queries'
-import { useDaemonRestart, useDaemonStart, useDaemonStop, useDiagnose } from '@renderer/state/mutations'
+import { useDefaultPermissionMode, useDefaultView, useHealth } from '@renderer/state/queries'
+import {
+  useDaemonRestart,
+  useDaemonStart,
+  useDaemonStop,
+  useDiagnose,
+  useSetDefaultPermissionMode,
+  useSetDefaultView
+} from '@renderer/state/mutations'
+import { PERMISSION_MODE_OPTIONS } from '@renderer/permissionModes'
+import type { ClaudePermissionMode, DefaultView } from '@shared/types'
 
 const STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
   pass: 'success',
@@ -13,10 +22,16 @@ const STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> 
 
 export function Settings(): JSX.Element {
   const health = useHealth()
+  const defaultView = useDefaultView()
+  const setDefaultView = useSetDefaultView()
+  const defaultPermissionMode = useDefaultPermissionMode()
+  const setDefaultPermissionMode = useSetDefaultPermissionMode()
   const daemonStart = useDaemonStart()
   const daemonStop = useDaemonStop()
   const daemonRestart = useDaemonRestart()
   const diagnose = useDiagnose()
+
+  const username = health.data?.username ?? null
 
   async function handleStop(): Promise<void> {
     if (
@@ -46,11 +61,61 @@ export function Settings(): JSX.Element {
     <div className="flex h-full flex-col gap-6 overflow-auto">
       <div>
         <h1 className="text-lg font-semibold text-slate-100">Settings</h1>
-        <p className="mt-1 text-sm text-slate-400">Docker Sandboxes installation status and diagnostics.</p>
+        <p className="mt-1 text-sm text-slate-400">
+          Docker Sandboxes account, defaults, installation status, and diagnostics.
+        </p>
       </div>
 
       <Card className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-slate-300">Status</h2>
+        <h2 className="text-sm font-semibold text-slate-300">Account</h2>
+        <p className="text-sm text-slate-400">
+          {username ? (
+            <>
+              Signed in as <span className="text-slate-200">{username}</span>
+            </>
+          ) : (
+            'Not signed in to Docker'
+          )}
+          <span className="text-slate-600"> — sign in/out from the account badge, top right.</span>
+        </p>
+
+        <div className="border-t border-slate-800 pt-3">
+          <p className="text-xs text-slate-500">Default sandbox view</p>
+          <div className="mt-1.5 flex gap-1">
+            {(['chat', 'terminal'] as const).map((view) => (
+              <button
+                key={view}
+                onClick={() => setDefaultView.mutate(view as DefaultView)}
+                className={`rounded-md px-3 py-1 text-xs capitalize ${
+                  defaultView.data === view
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                {view}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs text-slate-500">Default chat permissions</p>
+          <select
+            value={defaultPermissionMode.data ?? 'default'}
+            onChange={(e) => setDefaultPermissionMode.mutate(e.target.value as ClaudePermissionMode)}
+            className="mt-1.5 rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+          >
+            {PERMISSION_MODE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Card>
+
+      <Card className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-slate-300">Daemon</h2>
         {health.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
         {health.data && (
           <div className="flex flex-wrap items-center gap-2">
@@ -59,9 +124,6 @@ export function Settings(): JSX.Element {
             </Badge>
             <Badge tone={health.data.daemonUp ? 'success' : 'danger'}>
               daemon {health.data.daemonUp ? 'running' : 'stopped'}
-            </Badge>
-            <Badge tone={health.data.loggedIn ? 'success' : 'warning'}>
-              {health.data.loggedIn ? `signed in as ${health.data.username ?? '?'}` : 'not signed in'}
             </Badge>
           </div>
         )}
