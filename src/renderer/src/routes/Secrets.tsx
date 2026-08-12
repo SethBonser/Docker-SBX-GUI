@@ -2,31 +2,52 @@ import { useState } from 'react'
 import { Badge } from '@renderer/components/ui/Badge'
 import { Button } from '@renderer/components/ui/Button'
 import { Card } from '@renderer/components/ui/Card'
-import { useSandboxes, useSecrets } from '@renderer/state/queries'
-import { useRemoveSecret, useSetSecret, useSetSecretOAuth } from '@renderer/state/mutations'
-import { SECRET_SERVICES, type SecretEntry, type SecretService } from '@shared/types'
+import { usePasswordManagers, useSandboxes, useSecrets } from '@renderer/state/queries'
+import {
+  useRemoveSecret,
+  useSetSecret,
+  useSetSecretFromPasswordManager,
+  useSetSecretOAuth
+} from '@renderer/state/mutations'
+import { SECRET_SERVICES, type PasswordManagerId, type SecretEntry, type SecretService } from '@shared/types'
 
 const inputClass =
   'rounded-md border border-slate-800 bg-slate-900 px-2 py-1.5 text-sm text-slate-100 placeholder:text-slate-600'
 
 function ServiceCard({ service, entries }: { service: SecretService; entries: SecretEntry[] }): JSX.Element {
   const sandboxes = useSandboxes()
+  const passwordManagers = usePasswordManagers()
   const setSecret = useSetSecret()
   const setSecretOAuth = useSetSecretOAuth()
+  const setSecretFromPasswordManager = useSetSecretFromPasswordManager()
   const removeSecret = useRemoveSecret()
   const [value, setValue] = useState('')
   const [scope, setScope] = useState('')
   const [claudeLoginSandbox, setClaudeLoginSandbox] = useState('')
   const [signingIn, setSigningIn] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
+  const [pmManagerId, setPmManagerId] = useState<PasswordManagerId | ''>('')
+  const [pmReference, setPmReference] = useState('')
 
   const supportsOAuth = service === 'openai'
   const isAnthropic = service === 'anthropic'
+  const availableManagers = (passwordManagers.data ?? []).filter((m) => m.available)
 
   async function handleSave(): Promise<void> {
     if (!value.trim()) return
     await setSecret.mutateAsync({ service, value: value.trim(), sandboxName: scope || undefined })
     setValue('')
+  }
+
+  async function handleFetchFromPasswordManager(): Promise<void> {
+    if (!pmManagerId || !pmReference.trim()) return
+    await setSecretFromPasswordManager.mutateAsync({
+      service,
+      managerId: pmManagerId,
+      reference: pmReference.trim(),
+      sandboxName: scope || undefined
+    })
+    setPmReference('')
   }
 
   async function handleClaudeLogin(): Promise<void> {
@@ -131,9 +152,59 @@ function ServiceCard({ service, entries }: { service: SecretService; entries: Se
           Save
         </Button>
       </div>
-      {(setSecret.isError || setSecretOAuth.isError) && (
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-slate-800 pt-2">
+        <select
+          value={pmManagerId}
+          onChange={(e) => setPmManagerId(e.target.value as PasswordManagerId | '')}
+          className={inputClass}
+          disabled={availableManagers.length === 0}
+        >
+          <option value="">
+            {availableManagers.length === 0 ? 'No password manager CLI detected' : 'From password manager…'}
+          </option>
+          {(passwordManagers.data ?? []).map((m) => (
+            <option key={m.id} value={m.id} disabled={!m.available}>
+              {m.label}
+              {!m.available ? ' (not installed)' : m.signedIn === false ? ' (not signed in)' : ''}
+            </option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={pmReference}
+          onChange={(e) => setPmReference(e.target.value)}
+          placeholder={
+            pmManagerId === 'op'
+              ? 'op://Vault/Item/field'
+              : pmManagerId === 'bw'
+                ? 'Item name or ID'
+                : 'Secret reference'
+          }
+          disabled={!pmManagerId}
+          className={`flex-1 ${inputClass}`}
+        />
+        <Button
+          variant="secondary"
+          disabled={!pmManagerId || !pmReference.trim() || setSecretFromPasswordManager.isPending}
+          onClick={() => void handleFetchFromPasswordManager()}
+        >
+          {setSecretFromPasswordManager.isPending ? 'Fetching…' : 'Fetch & Save'}
+        </Button>
+      </div>
+      {pmManagerId && passwordManagers.data?.find((m) => m.id === pmManagerId)?.detail && (
+        <p className="text-xs text-amber-400">
+          {passwordManagers.data.find((m) => m.id === pmManagerId)?.detail}
+        </p>
+      )}
+
+      {(setSecret.isError || setSecretOAuth.isError || setSecretFromPasswordManager.isError) && (
         <p className="text-xs text-red-400">
-          {((setSecret.error ?? setSecretOAuth.error) as Error).message}
+          {
+            (
+              (setSecret.error ?? setSecretOAuth.error ?? setSecretFromPasswordManager.error) as Error
+            ).message
+          }
         </p>
       )}
     </Card>

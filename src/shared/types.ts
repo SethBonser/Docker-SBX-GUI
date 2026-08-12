@@ -216,6 +216,19 @@ export interface SecretEntry {
   status: string
 }
 
+// Password-manager integration for the Secrets page's plain-API-key input path — see
+// src/main/passwordManager.ts. `signedIn` is null when the CLI itself isn't installed (no
+// sign-in state to report); `detail` is a short human-readable status/error hint for the UI.
+export type PasswordManagerId = 'op' | 'bw'
+
+export interface PasswordManagerInfo {
+  id: PasswordManagerId
+  label: string
+  available: boolean
+  signedIn: boolean | null
+  detail: string | null
+}
+
 // Ground-truth shape confirmed live against `sbx diagnose -o json` (sbx v0.38.0). status is one
 // of "pass" | "warn" | "fail" | "skip" per the CLI's own summary counts, kept as free text since
 // only those four have been observed.

@@ -11,6 +11,7 @@ import {
   parseSecretLsText
 } from './parsers'
 import { runOAuthFlow } from './oauthFlow'
+import { resolvePasswordManagerSecret } from '../passwordManager'
 import type {
   CreateSandboxOptions,
   DiagnoseResult,
@@ -20,6 +21,7 @@ import type {
   McpAuthStatus,
   McpServerDetails,
   McpServerSummary,
+  PasswordManagerId,
   PolicyLogResult,
   PolicyRule,
   PolicyTier,
@@ -429,6 +431,24 @@ async function secretSetOAuth(service: string): Promise<void> {
   await runOAuthFlow(['secret', 'set', service, '--oauth'])
 }
 
+/**
+ * Fetches the secret value from a password-manager CLI (op/bw — see ../passwordManager.ts)
+ * entirely inside the main process and pipes it straight into the same stdin-based `secret set`
+ * plumbing the plain-API-key form uses — the value never crosses back over IPC to the renderer
+ * or populates a visible input field.
+ */
+async function secretSetFromPasswordManager(
+  service: string,
+  managerId: PasswordManagerId,
+  reference: string,
+  opts: { sandboxName?: string } = {}
+): Promise<void> {
+  const value = await resolvePasswordManagerSecret(managerId, reference)
+  const args = ['secret', 'set', service]
+  if (opts.sandboxName) args.push('--sandbox', opts.sandboxName)
+  await runWithStdin(args, `${value}\n`, { timeoutMs: 20_000 })
+}
+
 async function secretRemove(service: string, opts: { sandboxName?: string } = {}): Promise<void> {
   const args = ['secret', 'rm', service, '-f']
   if (opts.sandboxName) args.push('--sandbox', opts.sandboxName)
@@ -469,6 +489,7 @@ export const sbxCli = {
   secretList,
   secretSet,
   secretSetOAuth,
+  secretSetFromPasswordManager,
   secretRemove,
   daemonStart,
   daemonStop,

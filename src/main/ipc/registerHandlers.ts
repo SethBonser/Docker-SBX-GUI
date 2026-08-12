@@ -8,6 +8,7 @@ import { pickWorkspaceFolder, pickKitReference } from '../dialogs'
 import { agentSessionManager } from '../agents/AgentSessionManager'
 import { loginClaudeViaPty } from '../agents/claudePtyLogin'
 import { terminalSessionManager } from '../agents/TerminalSessionManager'
+import { listPasswordManagers } from '../passwordManager'
 import {
   getDefaultView,
   setDefaultView,
@@ -16,7 +17,13 @@ import {
   getLastAppliedPolicyTier,
   setLastAppliedPolicyTier
 } from '../settings'
-import type { ClaudePermissionMode, DefaultView, McpAddOptions, PolicyTier } from '@shared/types'
+import type {
+  ClaudePermissionMode,
+  DefaultView,
+  McpAddOptions,
+  PasswordManagerId,
+  PolicyTier
+} from '@shared/types'
 
 /** Re-throw plain, serializable errors so renderer catch blocks get useful info back over IPC. */
 function toIpcError(err: unknown): Error {
@@ -265,6 +272,31 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.sbxSecretSetOAuth, async (_event, service: string) => {
     try {
       await sbxCli.secretSetOAuth(service)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(
+    IPC.sbxSecretSetFromPasswordManager,
+    async (
+      _event,
+      service: string,
+      managerId: PasswordManagerId,
+      reference: string,
+      opts: { sandboxName?: string }
+    ) => {
+      try {
+        await sbxCli.secretSetFromPasswordManager(service, managerId, reference, opts)
+      } catch (err) {
+        throw toIpcError(err)
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.sbxPasswordManagerList, async () => {
+    try {
+      return await listPasswordManagers()
     } catch (err) {
       throw toIpcError(err)
     }

@@ -5,6 +5,7 @@ import type {
   HealthStatus,
   McpAuthStatus,
   McpServerSummary,
+  PasswordManagerInfo,
   PolicyRule,
   PolicyTier,
   PortMapping,
@@ -98,5 +99,17 @@ export function useSecrets() {
   return useQuery<SecretEntry[]>({
     queryKey: ['secrets'],
     queryFn: () => window.sbxApi.secretList()
+  })
+}
+
+/**
+ * Detected password-manager CLIs (op/bw) and their sign-in status — refetched periodically since
+ * a vault can lock or a CLI can be installed mid-session without the app restarting.
+ */
+export function usePasswordManagers() {
+  return useQuery<PasswordManagerInfo[]>({
+    queryKey: ['passwordManagers'],
+    queryFn: () => window.sbxApi.listPasswordManagers(),
+    refetchInterval: 30_000
   })
 }

@@ -14,6 +14,8 @@ import type {
   McpAuthStatus,
   McpServerDetails,
   McpServerSummary,
+  PasswordManagerId,
+  PasswordManagerInfo,
   PolicyLogResult,
   PolicyRule,
   PolicyTier,
@@ -79,6 +81,14 @@ const sbxApi = {
   secretSet: (service: string, value: string, opts?: { sandboxName?: string }): Promise<void> =>
     ipcRenderer.invoke(IPC.sbxSecretSet, service, value, opts ?? {}),
   secretSetOAuth: (service: string): Promise<void> => ipcRenderer.invoke(IPC.sbxSecretSetOAuth, service),
+  secretSetFromPasswordManager: (
+    service: string,
+    managerId: PasswordManagerId,
+    reference: string,
+    opts?: { sandboxName?: string }
+  ): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxSecretSetFromPasswordManager, service, managerId, reference, opts ?? {}),
+  listPasswordManagers: (): Promise<PasswordManagerInfo[]> => ipcRenderer.invoke(IPC.sbxPasswordManagerList),
   secretRemove: (service: string, opts?: { sandboxName?: string }): Promise<void> =>
     ipcRenderer.invoke(IPC.sbxSecretRemove, service, opts ?? {}),
   daemonStart: (): Promise<void> => ipcRenderer.invoke(IPC.sbxDaemonStart),

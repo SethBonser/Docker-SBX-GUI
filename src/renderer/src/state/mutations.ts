@@ -4,6 +4,7 @@ import type {
   CreateSandboxOptions,
   DefaultView,
   McpAddOptions,
+  PasswordManagerId,
   PolicyTier
 } from '@shared/types'
 
@@ -186,6 +187,29 @@ export function useSetSecretOAuth() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (service: string) => window.sbxApi.secretSetOAuth(service),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['secrets'] })
+  })
+}
+
+/**
+ * Fetches the secret value from the password manager CLI and sets it in one round trip — the
+ * raw value is resolved entirely inside the main process (see sbxCli.secretSetFromPasswordManager)
+ * and never comes back through this mutation's result or renderer state.
+ */
+export function useSetSecretFromPasswordManager() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      service,
+      managerId,
+      reference,
+      sandboxName
+    }: {
+      service: string
+      managerId: PasswordManagerId
+      reference: string
+      sandboxName?: string
+    }) => window.sbxApi.secretSetFromPasswordManager(service, managerId, reference, { sandboxName }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['secrets'] })
   })
 }
