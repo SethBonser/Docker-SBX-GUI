@@ -94,13 +94,53 @@ Produces `release/Docker Sandbox GUI-<version>-arm64.dmg` (Apple Silicon only, m
 
 ### Using the app
 
-1. **Sign in.** The circular badge in the top-right shows your Docker account. If you're not signed in, click it and choose **Sign in to Docker** — this opens your browser for the real `sbx login` OAuth flow.
+The Dashboard is what you land on — every sandbox you've created, with its status and quick actions:
+
+![Dashboard](assets/sandbox_gui_dashboard.png)
+
+1. **Sign in.** The circular badge in the top-right shows your Docker account. If you're not signed in, click it and choose **Sign in to Docker** — this opens your browser for the real `sbx login` OAuth flow. The same dropdown holds your defaults (default tab, default chat permission mode) and sign-out:
+
+   ![Account badge dropdown](assets/sandbox_login.png)
+
 2. **Create a sandbox.** Click **New sandbox** on the Dashboard and walk through the wizard: pick an agent, choose a workspace folder, set a name and (optionally) resource limits, attach any **Kits** you want (previewed live before you commit — shows exactly what credentials, network rules, and setup steps a kit will apply), optionally publish ports or add network deny rules, then review and create.
+
+   <details>
+   <summary>Wizard walkthrough (6 steps, click to expand)</summary>
+
+   ![Step 1: choose an agent](assets/create_sandbox_1.png)
+   ![Step 2: workspace](assets/create_sandbox_2.png)
+   ![Step 3: name and resources](assets/create_sandbox_3.png)
+   ![Step 4: kits](assets/create_sandbox_4.png)
+   ![Step 5: ports and network](assets/create_sandbox_5.png)
+   ![Step 6: review](assets/create_sandbox_6.png)
+
+   </details>
+
 3. **Run it.** Sandboxes you create start automatically; a stopped sandbox shows a **Run** button on its card.
-4. **Chat, Terminal, Ports, or Policy.** Click into a sandbox to open its detail page — four tabs at the top, and switching between Chat/Terminal never loses anything (both stay live). Chat is the polished default: markdown, copyable code blocks, tool-use indicators, a **Permissions** dropdown if a command gets blocked (pick Auto or Bypass for that session, or switch to Terminal for a real interactive prompt), and a **Clear chat** button that ends the session for real (not just a visual reset — Claude's actual memory of the conversation is gone too). If the sandbox isn't signed in to Claude yet, a **Sign in to Claude** banner appears and drives the real OAuth flow — typing `/login` in chat does the same thing. Typing `/mcp` in chat shows each MCP connector's status as of when the session started, plus a banner pointing at Terminal if anything needs authorizing (that step genuinely can't happen from chat — see above). Ports and Policy manage that one sandbox's published ports and network rules.
+4. **Chat, Terminal, Ports, or Policy.** Click into a sandbox to open its detail page — four tabs at the top, and switching between Chat/Terminal never loses anything (both stay live).
+
+   Chat is the polished default: markdown, copyable code blocks, tool-use indicators, a **Permissions** dropdown if a command gets blocked (pick Auto or Bypass for that session, or switch to Terminal for a real interactive prompt), and a **Clear chat** button that ends the session for real (not just a visual reset — Claude's actual memory of the conversation is gone too). If the sandbox isn't signed in to Claude yet, a **Sign in to Claude** banner appears and drives the real OAuth flow — typing `/login` in chat does the same thing. Typing `/mcp` in chat shows each MCP connector's status as of when the session started, plus a banner pointing at Terminal if anything needs authorizing (that step genuinely can't happen from chat — see above).
+
+   ![Chat tab](assets/sandbox_chat.png)
+
+   Terminal is a real interactive session — slash-command pickers, autocomplete, and per-command approval prompts all work here, including the **Check /mcp** button that opens the live connector picker for you:
+
+   ![Terminal tab](assets/sandbox_terminal.png)
+
+   Ports and Policy manage that one sandbox's published ports and network rules:
+
+   ![Ports tab](assets/sandbox_ports.png)
+   ![Per-sandbox Policy tab](assets/sandbox_policy.png)
+
 5. **MCP** (left nav) registers MCP servers, authorizes them (a real browser OAuth step — see the warning above), and loads an authorized server into any running sandbox.
+
+   ![MCP servers page](assets/sandbox_gui_mcp.png)
+
 6. **Policy** (left nav) sets the global network policy tier and manages global allow/deny rules, separately from the per-sandbox Policy tab.
-7. **Settings.** The account badge's dropdown has your defaults — which tab (Chat/Terminal) new sandboxes open to, and which permission mode new chat sessions start with.
+
+   ![Global Policy page](assets/sandbox_gui_policy.png)
+
+7. **Settings.** The account badge's dropdown (shown above) has your defaults — which tab (Chat/Terminal) new sandboxes open to, and which permission mode new chat sessions start with.
 8. **Stop / Remove** from the sandbox card when you're done — Remove is permanent and asks for confirmation first.
 
 Non-Claude agents (Codex, Gemini, etc.) can be created and run, and the Terminal tab works for them today (it's agent-agnostic) — they just don't have a *structured chat* adapter yet (the Chat tab will say so). That's tracked as upcoming work, along with a Secrets manager and first-run onboarding.
