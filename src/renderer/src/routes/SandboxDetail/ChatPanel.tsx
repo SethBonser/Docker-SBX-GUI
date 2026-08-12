@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Badge } from '@renderer/components/ui/Badge'
 import { Button } from '@renderer/components/ui/Button'
 import { useChatStore, type ChatMessage, type SessionStatus } from '@renderer/state/chatStore'
@@ -17,13 +18,17 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 const NOT_LOGGED_IN_PATTERN = /not logged in/i
 
 export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: string }): JSX.Element {
+  const navigate = useNavigate()
   const ensureSession = useChatStore((s) => s.ensureSession)
   const handleEvent = useChatStore((s) => s.handleEvent)
   const addUserMessage = useChatStore((s) => s.addUserMessage)
+  const clearSession = useChatStore((s) => s.clearSession)
   const session = useChatStore((s) => s.sessions[sandboxName])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const [needsLogin, setNeedsLogin] = useState(false)
+  const [mcpChecked, setMcpChecked] = useState(false)
   const [signingIn, setSigningIn] = useState(false)
   const [permissionMode, setPermissionMode] = useState<ClaudePermissionMode>('default')
   const defaultPermissionMode = useDefaultPermissionMode()
@@ -83,6 +88,26 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     const text = draft.trim()
     if (!text || sending) return
     setDraft('')
+
+    // "/login" doesn't work over the headless protocol at all (confirmed: it needs a real TTY,
+    // same as the interactive /mcp actions) — alias it locally to the pty-based sign-in flow
+    // instead of forwarding it to a session that can't do anything with it.
+    if (text === '/login') {
+      addUserMessage(sandboxName, text)
+      handleEvent(sandboxName, {
+        type: 'assistant_message',
+        text: "Interactive login isn't available over chat — redirecting to the real sign-in flow. Check your browser.",
+        messageId: `local-login-${Date.now()}`
+      })
+      setNeedsLogin(true)
+      void handleSignIn()
+      return
+    }
+
+    // Claude Code's own headless reply to a bare "/mcp" is a one-line connector summary — only
+    // surface the "authorize in Terminal" banner once the user has actually asked, rather than
+    // on every message whenever some connector happens to need auth.
+    if (text === '/mcp') setMcpChecked(true)
     addUserMessage(sandboxName, text)
     setSending(true)
     try {
@@ -108,6 +133,27 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     }
   }
 
+  async function handleClearChat(): Promise<void> {
+    if (!confirm('Clear this conversation? This ends the current session — Claude will start fresh, with no memory of anything said so far.')) {
+      return
+    }
+    setClearing(true)
+    try {
+      // A full reset, not just a visual one: stop the running process (so Claude's actual
+      // conversation memory is gone, not just hidden), wipe the transcript, then start a
+      // genuinely new session with whatever permission mode is currently selected.
+      await window.sbxApi.stopChatSession(sandboxName)
+      clearSession(sandboxName)
+      setNeedsLogin(false)
+      setMcpChecked(false)
+      await window.sbxApi.startChatSession(sandboxName, agent, permissionMode).catch((err: Error) => {
+        handleEvent(sandboxName, { type: 'error', message: err.message })
+      })
+    } finally {
+      setClearing(false)
+    }
+  }
+
   async function handlePermissionModeChange(mode: ClaudePermissionMode): Promise<void> {
     setPermissionMode(mode)
     // The mode is a spawn-time flag — apply it by restarting the session (a no-op stop if
@@ -124,21 +170,47 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
         <span className="text-sm text-slate-400">{STATUS_LABEL[status]}</span>
-        <label className="flex items-center gap-2 text-xs text-slate-500">
-          Permissions
-          <select
-            value={permissionMode}
-            onChange={(e) => void handlePermissionModeChange(e.target.value as ClaudePermissionMode)}
-            className="rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            Permissions
+            <select
+              value={permissionMode}
+              onChange={(e) => void handlePermissionModeChange(e.target.value as ClaudePermissionMode)}
+              className="rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+            >
+              {PERMISSION_MODE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            disabled={clearing || !session?.messages.length}
+            onClick={() => void handleClearChat()}
+            className="text-xs text-slate-500 hover:text-slate-300 disabled:cursor-not-allowed disabled:text-slate-700"
           >
-            {PERMISSION_MODE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            {clearing ? 'Clearing…' : 'Clear chat'}
+          </button>
+        </div>
       </div>
+
+      {mcpChecked && session && session.mcpServers.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 py-2">
+          {session.mcpServers.map((s) => (
+            <Badge key={s.name} tone={s.status === 'connected' ? 'success' : 'warning'}>
+              {s.name} · {s.status}
+            </Badge>
+          ))}
+          <Link
+            to={`/sandboxes/${sandboxName}?tab=terminal`}
+            className="text-xs text-slate-600 hover:text-slate-400"
+            title="Snapshot from when this session started — reload the chat (Clear chat) to refresh it, or check the Terminal tab's /mcp for the live picker."
+          >
+            (as of session start — verify in Terminal)
+          </Link>
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-auto py-3">
         <div className="flex flex-col gap-3">
@@ -153,6 +225,18 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
           <span className="text-sm text-amber-300">This sandbox isn't signed in to Claude yet.</span>
           <Button disabled={signingIn} onClick={() => void handleSignIn()}>
             {signingIn ? 'Waiting for browser sign-in…' : 'Sign in to Claude'}
+          </Button>
+        </div>
+      )}
+
+      {mcpChecked && session?.mcpServers.some((s) => s.status !== 'connected') && (
+        <div className="mb-3 flex items-center justify-between rounded-md border border-amber-900 bg-amber-950 px-3 py-2">
+          <span className="text-sm text-amber-300">
+            One or more MCP connectors need authorization. This isn't fully functional in
+            chat — switch to the Terminal tab and run <code>/mcp</code> to authorize them.
+          </span>
+          <Button variant="secondary" onClick={() => navigate(`/sandboxes/${sandboxName}?tab=terminal`)}>
+            Open Terminal
           </Button>
         </div>
       )}

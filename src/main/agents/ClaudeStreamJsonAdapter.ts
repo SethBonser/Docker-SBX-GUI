@@ -35,6 +35,7 @@ interface RawStreamEvent {
   tool_name?: string
   tool_use_id?: string
   decision_reason?: string
+  mcp_servers?: { name: string; status: string }[]
 }
 
 function toolResultToString(content: RawContentBlock['content']): string {
@@ -103,6 +104,14 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
     const rl = createInterface({ input: child.stdout })
     rl.on('line', (line) => this.handleLine(line))
 
+    // Captured purely for diagnostics on a non-zero exit — without this, a failure to launch
+    // (sandbox mid-stop, daemon hiccup, etc.) surfaces as the useless "exited with code 1"
+    // with no indication of why.
+    let stderrTail = ''
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderrTail = (stderrTail + chunk.toString()).slice(-2000)
+    })
+
     // Confirmed live: the CLI's own "system/init" event (previously used to signal ready)
     // does NOT print until after the *first* stdin message is sent — it can't be used as a
     // connection-readiness signal, since that would mean "ready" never fires until the user
@@ -121,7 +130,13 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
     child.on('exit', (code) => {
       this.child = null
       if (code !== 0 && code !== null) {
-        this.emit({ type: 'error', message: `claude session exited with code ${code}` })
+        const detail = stderrTail.trim()
+        this.emit({
+          type: 'error',
+          message: detail
+            ? `Session exited (code ${code}): ${detail}`
+            : `Session exited (code ${code}) with no error output.`
+        })
       }
       this.emit({ type: 'status', status: 'exited' })
     })
@@ -143,6 +158,9 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
       // Status is already 'ready' from the process's own 'spawn' event — this just captures
       // the session id for potential future --resume support.
       this.sessionId = evt.session_id ?? this.sessionId
+      if (evt.mcp_servers) {
+        this.emit({ type: 'mcp_status', servers: evt.mcp_servers })
+      }
       return
     }
 

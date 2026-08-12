@@ -1,11 +1,26 @@
 import { execFile } from 'child_process'
 import { SbxCliError, classifyFailure } from './errors'
-import { parseLsJson, parseKitInspectJson, parsePortsJson } from './parsers'
+import {
+  parseLsJson,
+  parseKitInspectJson,
+  parsePortsJson,
+  parsePolicyLsJson,
+  parseMcpLsText,
+  parseMcpInspectText,
+  parseMcpAuthStatusJson
+} from './parsers'
 import { runOAuthFlow } from './oauthFlow'
 import type {
   CreateSandboxOptions,
   KitDetails,
   KitValidationResult,
+  McpAddOptions,
+  McpAuthStatus,
+  McpServerDetails,
+  McpServerSummary,
+  PolicyLogResult,
+  PolicyRule,
+  PolicyTier,
   PortMapping,
   SandboxSummary
 } from '@shared/types'
@@ -169,6 +184,126 @@ async function kitValidate(reference: string): Promise<KitValidationResult> {
   }
 }
 
+async function policyList(sandboxName?: string): Promise<PolicyRule[]> {
+  const args = ['policy', 'ls']
+  if (sandboxName) args.push(sandboxName)
+  args.push('--json')
+  const { stdout } = await run(args)
+  return parsePolicyLsJson(stdout)
+}
+
+async function policyAllowNetwork(resources: string, sandboxName?: string): Promise<void> {
+  const args = ['policy', 'allow', 'network']
+  if (sandboxName) args.push('--sandbox', sandboxName)
+  args.push(resources)
+  await run(args)
+}
+
+async function policyDenyNetwork(resources: string, sandboxName?: string): Promise<void> {
+  const args = ['policy', 'deny', 'network']
+  if (sandboxName) args.push('--sandbox', sandboxName)
+  args.push(resources)
+  await run(args)
+}
+
+async function policyRemoveNetwork(opts: { id?: string; resource?: string; sandboxName?: string }): Promise<void> {
+  const args = ['policy', 'rm', 'network']
+  if (opts.sandboxName) args.push('--sandbox', opts.sandboxName)
+  if (opts.id) args.push('--id', opts.id)
+  if (opts.resource) args.push('--resource', opts.resource)
+  await run(args)
+}
+
+/**
+ * Field names beyond allowed_hosts/blocked_hosts weren't confirmed against real traffic (the
+ * test sandbox had none logged yet) — kept loosely typed and rendered generically in the UI
+ * rather than guessing a precise per-entry shape.
+ */
+async function policyLog(sandboxName?: string, limit?: number): Promise<PolicyLogResult> {
+  const args = ['policy', 'log']
+  if (sandboxName) args.push(sandboxName)
+  args.push('--json')
+  if (limit) args.push('--limit', String(limit))
+  const { stdout } = await run(args)
+  const parsed = JSON.parse(stdout) as {
+    allowed_hosts?: Record<string, unknown>[]
+    blocked_hosts?: Record<string, unknown>[]
+  }
+  return { allowedHosts: parsed.allowed_hosts ?? [], blockedHosts: parsed.blocked_hosts ?? [] }
+}
+
+async function policyInit(tier: PolicyTier): Promise<void> {
+  await run(['policy', 'init', tier])
+}
+
+/**
+ * Confirmed live: destructive — deletes the local policy store and restarts the daemon,
+ * stopping every currently running sandbox. `-f` skips the confirmation prompt that would
+ * otherwise hang forever (never attached to a TTY). The caller (GlobalPolicy page) must get
+ * explicit confirmation from the user before calling this — it's not a casual toggle.
+ */
+async function policyReset(): Promise<void> {
+  await run(['policy', 'reset', '-f'], { timeoutMs: 30_000 })
+}
+
+async function mcpList(): Promise<McpServerSummary[]> {
+  const { stdout } = await run(['mcp', 'ls'])
+  return parseMcpLsText(stdout)
+}
+
+async function mcpInspect(name: string): Promise<McpServerDetails> {
+  const { stdout } = await run(['mcp', 'inspect', name])
+  return parseMcpInspectText(stdout)
+}
+
+/**
+ * Mirrors the full `sbx mcp add` flag set (see McpAddOptions). Always adds --skip_auth for a
+ * --url server: registration and authorization are kept as two explicit steps in the UI
+ * (register, then a separate "Authorize" action) rather than an add that might silently kick
+ * off a browser OAuth flow the user didn't ask for yet. --command servers have no OAuth concept
+ * so --skip_auth is omitted for them.
+ */
+async function mcpAdd(name: string, opts: McpAddOptions): Promise<void> {
+  const args = ['mcp', 'add', name]
+  if (opts.url) args.push('--url', opts.url)
+  if (opts.command) args.push('--command', opts.command)
+  if (opts.args?.length) args.push('--args', opts.args.join(','))
+  if (opts.dir) args.push('--dir', opts.dir)
+  if (opts.local) args.push('--local')
+  if (opts.clientId) args.push('--client-id', opts.clientId)
+  if (opts.oauthAuthorizationServer) args.push('--oauth-authorization-server', opts.oauthAuthorizationServer)
+  for (const scope of opts.scopes ?? []) args.push('--scope', scope)
+  if (opts.skipSsrfCheck) args.push('--skip-ssrf-check')
+  if (opts.url) args.push('--skip_auth')
+  await run(args, { timeoutMs: 30_000 })
+}
+
+/**
+ * Confirmed live: `sbx mcp auth <name>` prints "Open this URL to authorize..." followed by a
+ * URL, then blocks until the browser-based OAuth consent completes — identical shape to
+ * `sbx login`, so it reuses the same runOAuthFlow helper.
+ */
+async function mcpAuth(name: string): Promise<void> {
+  await runOAuthFlow(['mcp', 'auth', name])
+}
+
+async function mcpAuthStatus(): Promise<McpAuthStatus[]> {
+  const { stdout } = await run(['mcp', 'auth', 'status', '--all', '--format', 'json'])
+  return parseMcpAuthStatusJson(stdout)
+}
+
+async function mcpAuthRemove(name: string): Promise<void> {
+  await run(['mcp', 'auth', 'rm', name])
+}
+
+async function mcpRemove(name: string): Promise<void> {
+  await run(['mcp', 'rm', name])
+}
+
+async function mcpLoad(name: string, sandboxName: string): Promise<void> {
+  await run(['mcp', 'load', name, '--sandbox', sandboxName], { timeoutMs: 30_000 })
+}
+
 export const sbxCli = {
   version,
   daemonStatus,
@@ -184,5 +319,20 @@ export const sbxCli = {
   publishPort,
   unpublishPort,
   kitInspect,
-  kitValidate
+  kitValidate,
+  policyList,
+  policyAllowNetwork,
+  policyDenyNetwork,
+  policyRemoveNetwork,
+  policyLog,
+  policyInit,
+  policyReset,
+  mcpList,
+  mcpInspect,
+  mcpAdd,
+  mcpAuth,
+  mcpAuthStatus,
+  mcpAuthRemove,
+  mcpRemove,
+  mcpLoad
 }

@@ -21,6 +21,7 @@ export type SessionStatus = 'idle' | 'connecting' | 'ready' | 'exited'
 interface ChatSessionState {
   messages: ChatMessage[]
   status: SessionStatus
+  mcpServers: { name: string; status: string }[]
 }
 
 interface ChatStoreState {
@@ -28,10 +29,11 @@ interface ChatStoreState {
   handleEvent: (sandboxName: string, event: AgentSessionEvent) => void
   addUserMessage: (sandboxName: string, text: string) => void
   ensureSession: (sandboxName: string) => void
+  clearSession: (sandboxName: string) => void
 }
 
 function emptySession(): ChatSessionState {
-  return { messages: [], status: 'idle' }
+  return { messages: [], status: 'idle', mcpServers: [] }
 }
 
 let idCounter = 0
@@ -47,6 +49,18 @@ export const useChatStore = create<ChatStoreState>((set) => ({
     set((state) => {
       if (state.sessions[sandboxName]) return state
       return { sessions: { ...state.sessions, [sandboxName]: emptySession() } }
+    }),
+
+  // Resets the visible transcript to empty. Deliberately does NOT touch `status` — the caller
+  // (ChatPanel) restarts the underlying session separately so Claude's actual conversation
+  // memory is wiped too, not just the display; leaving status alone avoids a spurious flash
+  // back to "Not started" before the real restart's status events arrive.
+  clearSession: (sandboxName) =>
+    set((state) => {
+      const session = state.sessions[sandboxName] ?? emptySession()
+      return {
+        sessions: { ...state.sessions, [sandboxName]: { ...session, messages: [], mcpServers: [] } }
+      }
     }),
 
   addUserMessage: (sandboxName, text) =>
@@ -74,14 +88,14 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           if (event.status === 'connecting') status = 'connecting'
           else if (event.status === 'ready') status = 'ready'
           else if (event.status === 'exited') status = 'exited'
-          return { sessions: { ...state.sessions, [sandboxName]: { messages, status } } }
+          return { sessions: { ...state.sessions, [sandboxName]: { ...session, status } } }
 
         case 'assistant_message':
           return {
             sessions: {
               ...state.sessions,
               [sandboxName]: {
-                status,
+                ...session,
                 messages: [...messages, { kind: 'assistant', id: nextId(), text: event.text }]
               }
             }
@@ -92,7 +106,7 @@ export const useChatStore = create<ChatStoreState>((set) => ({
             sessions: {
               ...state.sessions,
               [sandboxName]: {
-                status,
+                ...session,
                 messages: [
                   ...messages,
                   { kind: 'tool', id: event.id, name: event.name, input: event.input, resultPending: true }
@@ -121,7 +135,7 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               resultPending: false
             })
           }
-          return { sessions: { ...state.sessions, [sandboxName]: { status, messages: updated } } }
+          return { sessions: { ...state.sessions, [sandboxName]: { ...session, messages: updated } } }
         }
 
         case 'permission_denied': {
@@ -143,7 +157,7 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               blockedReason: event.reason
             })
           }
-          return { sessions: { ...state.sessions, [sandboxName]: { status, messages: updated } } }
+          return { sessions: { ...state.sessions, [sandboxName]: { ...session, messages: updated } } }
         }
 
         case 'error':
@@ -151,10 +165,15 @@ export const useChatStore = create<ChatStoreState>((set) => ({
             sessions: {
               ...state.sessions,
               [sandboxName]: {
-                status,
+                ...session,
                 messages: [...messages, { kind: 'error', id: nextId(), message: event.message }]
               }
             }
+          }
+
+        case 'mcp_status':
+          return {
+            sessions: { ...state.sessions, [sandboxName]: { ...session, mcpServers: event.servers } }
           }
 
         default:

@@ -12,9 +12,11 @@ import {
   getDefaultView,
   setDefaultView,
   getDefaultPermissionMode,
-  setDefaultPermissionMode
+  setDefaultPermissionMode,
+  getLastAppliedPolicyTier,
+  setLastAppliedPolicyTier
 } from '../settings'
-import type { ClaudePermissionMode, DefaultView } from '@shared/types'
+import type { ClaudePermissionMode, DefaultView, McpAddOptions, PolicyTier } from '@shared/types'
 
 /** Re-throw plain, serializable errors so renderer catch blocks get useful info back over IPC. */
 function toIpcError(err: unknown): Error {
@@ -107,6 +109,135 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.sbxKitValidate, async (_event, reference: string) => {
     return sbxCli.kitValidate(reference)
+  })
+
+  ipcMain.handle(IPC.sbxPolicyList, async (_event, sandboxName?: string) => {
+    try {
+      return await sbxCli.policyList(sandboxName)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxPolicyAllowNetwork, async (_event, resources: string, sandboxName?: string) => {
+    try {
+      await sbxCli.policyAllowNetwork(resources, sandboxName)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxPolicyDenyNetwork, async (_event, resources: string, sandboxName?: string) => {
+    try {
+      await sbxCli.policyDenyNetwork(resources, sandboxName)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(
+    IPC.sbxPolicyRemoveNetwork,
+    async (_event, opts: { id?: string; resource?: string; sandboxName?: string }) => {
+      try {
+        await sbxCli.policyRemoveNetwork(opts)
+      } catch (err) {
+        throw toIpcError(err)
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.sbxPolicyLog, async (_event, sandboxName?: string, limit?: number) => {
+    try {
+      return await sbxCli.policyLog(sandboxName, limit)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxPolicyInit, async (_event, tier: PolicyTier) => {
+    try {
+      await sbxCli.policyInit(tier)
+      // sbx exposes no way to query the active tier later, so this is our only record of it —
+      // and only accurate for tiers applied through this app's own switcher.
+      setLastAppliedPolicyTier(tier)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxPolicyReset, async () => {
+    try {
+      await sbxCli.policyReset()
+      setLastAppliedPolicyTier(null)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.settingsGetLastAppliedPolicyTier, () => getLastAppliedPolicyTier())
+
+  ipcMain.handle(IPC.sbxMcpList, async () => {
+    try {
+      return await sbxCli.mcpList()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxMcpInspect, async (_event, name: string) => {
+    try {
+      return await sbxCli.mcpInspect(name)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxMcpAdd, async (_event, name: string, opts: McpAddOptions) => {
+    try {
+      await sbxCli.mcpAdd(name, opts)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxMcpAuth, async (_event, name: string) => {
+    try {
+      await sbxCli.mcpAuth(name)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxMcpAuthStatus, async () => {
+    try {
+      return await sbxCli.mcpAuthStatus()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxMcpAuthRemove, async (_event, name: string) => {
+    try {
+      await sbxCli.mcpAuthRemove(name)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxMcpRemove, async (_event, name: string) => {
+    try {
+      await sbxCli.mcpRemove(name)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxMcpLoad, async (_event, name: string, sandboxName: string) => {
+    try {
+      await sbxCli.mcpLoad(name, sandboxName)
+    } catch (err) {
+      throw toIpcError(err)
+    }
   })
 
   ipcMain.handle(IPC.dialogPickFolder, async (event) => {

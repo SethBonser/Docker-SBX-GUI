@@ -92,6 +92,13 @@ export type AgentSessionEvent =
   | { type: 'permission_denied'; toolUseId: string; toolName: string; reason: string }
   | { type: 'raw_output'; text: string } // generic fallback adapter only
   | { type: 'error'; message: string }
+  // Confirmed live: the headless `system/init` event's `mcp_servers` array includes both the
+  // sbx-mediated "mcp-gateway" AND Claude.ai's own native connectors (Gmail, Drive, etc. — the
+  // same set the real `/mcp` picker shows), each with a "connected"/"needs-auth"/etc. status.
+  // It's a one-time snapshot taken when the *first* message is sent (system/init doesn't fire
+  // any earlier), so a connector whose discovery hadn't finished yet at that moment can be
+  // missing or stale for the rest of the session — it does not live-update afterward.
+  | { type: 'mcp_status'; servers: { name: string; status: string }[] }
 
 // Confirmed live: headless stream-json mode auto-denies risky Bash commands (process
 // substitution, complex chaining, etc.) with no bidirectional "ask and wait" channel — there
@@ -115,6 +122,71 @@ export type ClaudePermissionMode =
   | 'dontAsk'
   | 'bypassPermissions'
   | 'plan'
+
+// Ground-truth shape confirmed against a live `sbx policy ls --json` (sbx v0.38.0).
+export interface PolicyRule {
+  id: string
+  name: string
+  policyId: string
+  scope: string // "global" or "sandbox:<name>"
+  appliesTo: string
+  resourceType: string // "network" | "filesystem:read" | "filesystem:write"
+  decision: 'allow' | 'deny'
+  resources: string[]
+  origin: string // "local" | "scoped" | "org" | "kit"
+  layer: string
+  status: string
+  editable: boolean
+  sandboxId?: string
+}
+
+export interface PolicyLogResult {
+  allowedHosts: Record<string, unknown>[]
+  blockedHosts: Record<string, unknown>[]
+}
+
+export type PolicyTier = 'allow-all' | 'balanced' | 'deny-all'
+
+export interface McpServerSummary {
+  name: string
+  type: string // "remote" | "local"
+  urlOrCommand: string
+}
+
+// Mirrors the real flag set of `sbx mcp add` (confirmed live via --help, sbx v0.38.0). Exactly
+// one of url/command should be set — url for a remote endpoint/manifest/registry/DHI ref,
+// command for a local stdio server that runs as a host subprocess (dev-only, unsandboxed).
+export interface McpAddOptions {
+  url?: string
+  command?: string
+  args?: string[]
+  dir?: string
+  local?: boolean
+  clientId?: string
+  oauthAuthorizationServer?: string
+  scopes?: string[]
+  skipSsrfCheck?: boolean
+}
+
+export interface McpServerDetails {
+  name: string
+  type: string
+  urlOrCommand: string
+  transport?: string
+  oauth?: {
+    required: boolean
+    issuer?: string
+    registration?: string
+  }
+}
+
+// "status" isn't a fixed enum in sbx's own docs beyond "unauthorized" (confirmed live) and the
+// "expired" case implied by `sbx mcp auth`'s help text — rendered generically rather than
+// mapped to a closed set.
+export interface McpAuthStatus {
+  serverName: string
+  status: string
+}
 
 export interface KitDetails {
   manifest: {

@@ -1,4 +1,13 @@
-import type { KitDetails, PortMapping, SandboxStatus, SandboxSummary } from '@shared/types'
+import type {
+  KitDetails,
+  McpAuthStatus,
+  McpServerDetails,
+  McpServerSummary,
+  PolicyRule,
+  PortMapping,
+  SandboxStatus,
+  SandboxSummary
+} from '@shared/types'
 
 // Ground-truth shape confirmed against a live `sbx ls --json` (sbx v0.38.0):
 // { "sandboxes": [ { name, id, agent, status, ports?: [...], workspaces: [...] } ] }
@@ -56,4 +65,102 @@ export function parsePortsJson(stdout: string): PortMapping[] {
 
 export function parseKitInspectJson(stdout: string): KitDetails {
   return JSON.parse(stdout) as KitDetails
+}
+
+interface RawPolicyRule {
+  id: string
+  name: string
+  policy_id: string
+  scope: string
+  applies_to: string
+  resource_type: string
+  decision: string
+  resources: string[]
+  origin: string
+  layer: string
+  status: string
+  editable: boolean
+  sandbox_id?: string
+}
+
+interface RawPolicyLsOutput {
+  rules: RawPolicyRule[]
+}
+
+// `sbx mcp ls`/`inspect` have no --json flag (confirmed live) — parsed defensively from the
+// text tables/blocks rather than a stable structured contract.
+
+export function parseMcpLsText(stdout: string): McpServerSummary[] {
+  const lines = stdout
+    .trim()
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  if (lines.length === 0 || /^no mcp servers registered/i.test(lines[0])) return []
+  // Header row ("NAME  TYPE  URL/COMMAND") is skipped; columns are padded with 2+ spaces.
+  return lines.slice(1).map((line) => {
+    const [name = '', type = '', urlOrCommand = ''] = line.split(/\s{2,}/)
+    return { name, type, urlOrCommand }
+  })
+}
+
+export function parseMcpInspectText(stdout: string): McpServerDetails {
+  const fields: Record<string, string> = {}
+  let hasOAuth = false
+  let oauthRequired = false
+  let issuer: string | undefined
+  let registration: string | undefined
+
+  for (const rawLine of stdout.split('\n')) {
+    const trimmed = rawLine.trim()
+    const idx = trimmed.indexOf(':')
+    if (!trimmed || idx === -1) continue
+    const key = trimmed.slice(0, idx).trim()
+    const value = trimmed.slice(idx + 1).trim()
+    if (key === 'Issuer') issuer = value
+    else if (key === 'Registration') registration = value
+    else if (key === 'OAuth') {
+      hasOAuth = true
+      oauthRequired = /required/i.test(value)
+    } else {
+      fields[key] = value
+    }
+  }
+
+  return {
+    name: fields.Name ?? '',
+    type: fields.Type ?? '',
+    urlOrCommand: fields.URL ?? fields.Command ?? '',
+    transport: fields.Transport,
+    oauth: hasOAuth ? { required: oauthRequired, issuer, registration } : undefined
+  }
+}
+
+interface RawMcpAuthStatus {
+  server_name: string
+  status: string
+}
+
+export function parseMcpAuthStatusJson(stdout: string): McpAuthStatus[] {
+  const parsed = JSON.parse(stdout) as RawMcpAuthStatus[]
+  return parsed.map((r) => ({ serverName: r.server_name, status: r.status }))
+}
+
+export function parsePolicyLsJson(stdout: string): PolicyRule[] {
+  const parsed = JSON.parse(stdout) as RawPolicyLsOutput
+  return parsed.rules.map((r) => ({
+    id: r.id,
+    name: r.name,
+    policyId: r.policy_id,
+    scope: r.scope,
+    appliesTo: r.applies_to,
+    resourceType: r.resource_type,
+    decision: r.decision === 'deny' ? 'deny' : 'allow',
+    resources: r.resources,
+    origin: r.origin,
+    layer: r.layer,
+    status: r.status,
+    editable: r.editable,
+    sandboxId: r.sandbox_id
+  }))
 }

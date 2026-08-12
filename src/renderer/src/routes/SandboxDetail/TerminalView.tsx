@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { Button } from '@renderer/components/ui/Button'
 import { useTerminalStore } from '@renderer/state/terminalStore'
 
 const THEME = {
@@ -77,5 +78,17 @@ export function TerminalView({ sandboxName, active }: { sandboxName: string; act
     return () => observer.disconnect()
   }, [active, sandboxName])
 
-  return <div ref={containerRef} className="h-full w-full" />
+  return (
+    <div className="flex h-full flex-col gap-2">
+      <div className="flex flex-shrink-0 items-center justify-end">
+        <Button
+          variant="ghost"
+          onClick={() => void window.sbxApi.sendTerminalInput(sandboxName, '/mcp\r')}
+        >
+          Check /mcp
+        </Button>
+      </div>
+      <div ref={containerRef} className="min-h-0 flex-1 w-full" />
+    </div>
+  )
 }

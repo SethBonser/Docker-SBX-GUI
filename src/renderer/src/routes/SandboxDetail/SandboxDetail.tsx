@@ -1,27 +1,47 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Badge } from '@renderer/components/ui/Badge'
 import { useDefaultView, useSandboxes } from '@renderer/state/queries'
 import { ChatPanel } from './ChatPanel'
 import { TerminalView } from './TerminalView'
+import { PortsTab } from './PortsTab'
+import { PolicyTab } from './PolicyTab'
 import type { DefaultView } from '@shared/types'
+
+type Tab = DefaultView | 'ports' | 'policy'
+
+const TABS: Tab[] = ['chat', 'terminal', 'ports', 'policy']
 
 export function SandboxDetail(): JSX.Element {
   const { name } = useParams<{ name: string }>()
   const sandboxes = useSandboxes()
   const sandbox = sandboxes.data?.find((sb) => sb.name === name)
   const defaultView = useDefaultView()
-  const [tab, setTab] = useState<DefaultView>('chat')
-  const appliedDefault = useRef(false)
+  const [searchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const [tab, setTab] = useState<Tab>(
+    requestedTab && (TABS as string[]).includes(requestedTab) ? (requestedTab as Tab) : 'chat'
+  )
+  // An explicit ?tab= link (e.g. "verify MCP" from the MCP page) always wins — only fall back
+  // to the saved default view when nobody asked for a specific tab.
+  const appliedDefault = useRef(requestedTab !== null)
 
-  // Apply the user's saved default view once it loads, but only before they've made their
-  // own choice for this session — don't fight a manual tab switch.
   useEffect(() => {
     if (!appliedDefault.current && defaultView.data) {
       setTab(defaultView.data)
       appliedDefault.current = true
     }
   }, [defaultView.data])
+
+  // Reacts to ?tab= changes even when this page is already mounted (e.g. the "Open Terminal"
+  // button in ChatPanel navigates to the same route with a different query string, which
+  // doesn't remount the component — only the initial useState() would have missed this).
+  useEffect(() => {
+    if (requestedTab && (TABS as string[]).includes(requestedTab)) {
+      setTab(requestedTab as Tab)
+      appliedDefault.current = true
+    }
+  }, [requestedTab])
 
   if (sandboxes.isLoading) {
     return <p className="text-slate-400">Loading…</p>
@@ -50,7 +70,7 @@ export function SandboxDetail(): JSX.Element {
       </div>
 
       <div className="flex gap-1 border-b border-slate-800">
-        {(['chat', 'terminal'] as const).map((t) => (
+        {TABS.map((t) => (
           <button
             key={t}
             onClick={() => {
@@ -69,10 +89,12 @@ export function SandboxDetail(): JSX.Element {
       </div>
 
       {/*
-        Both views stay mounted the whole time this page is open — switching tabs is a
-        CSS visibility toggle, not a mount/unmount, so neither the chat conversation nor
-        the terminal's live xterm instance and scroll position are lost when you switch
-        back and forth.
+        Chat and Terminal stay mounted the whole time this page is open — switching tabs is a
+        CSS visibility toggle, not a mount/unmount, so neither the chat conversation nor the
+        terminal's live xterm instance and scroll position are lost when you switch back and
+        forth. Ports/Policy don't hold any live session state (just React Query-backed views),
+        so they're mounted normally — the query cache already keeps their data warm across tab
+        switches without needing the same always-mounted treatment.
       */}
       <div className="min-h-0 flex-1 rounded-lg border border-slate-800 bg-slate-900 p-4">
         <div className={tab === 'chat' ? 'h-full' : 'hidden'}>
@@ -81,6 +103,8 @@ export function SandboxDetail(): JSX.Element {
         <div className={tab === 'terminal' ? 'h-full' : 'hidden'}>
           <TerminalView sandboxName={sandbox.name} active={tab === 'terminal'} />
         </div>
+        {tab === 'ports' && <PortsTab sandboxName={sandbox.name} />}
+        {tab === 'policy' && <PolicyTab sandboxName={sandbox.name} />}
       </div>
     </div>
   )

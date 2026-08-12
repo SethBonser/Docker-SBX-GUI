@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/kits', label: 'Kits' },
   { to: '/secrets', label: 'Secrets' },
+  { to: '/mcp', label: 'MCP' },
   { to: '/policy', label: 'Policy' },
   { to: '/settings', label: 'Settings' }
 ]

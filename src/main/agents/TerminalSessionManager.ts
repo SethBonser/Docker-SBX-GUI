@@ -38,7 +38,16 @@ class TerminalSessionManagerImpl {
     this.sessions.set(sandboxName, term)
 
     term.onData((data) => this.broadcast(sandboxName, data))
-    term.onExit(() => this.sessions.delete(sandboxName))
+    term.onExit(({ exitCode }) => {
+      this.sessions.delete(sandboxName)
+      // The only channel TerminalView listens to is the raw data stream, so a visible message
+      // here (instead of silently deleting the session with no signal at all) is what makes a
+      // failed/ended session show *something* instead of just going permanently blank.
+      this.broadcast(
+        sandboxName,
+        `\r\n\x1b[33m[session ended, exit code ${exitCode}]\x1b[0m\r\n`
+      )
+    })
   }
 
   write(sandboxName: string, data: string): void {

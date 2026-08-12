@@ -9,6 +9,13 @@ import type {
   HealthStatus,
   KitDetails,
   KitValidationResult,
+  McpAddOptions,
+  McpAuthStatus,
+  McpServerDetails,
+  McpServerSummary,
+  PolicyLogResult,
+  PolicyRule,
+  PolicyTier,
   PortMapping,
   PtyLoginResult,
   SandboxSummary
@@ -42,6 +49,29 @@ const sbxApi = {
   kitInspect: (reference: string): Promise<KitDetails> => ipcRenderer.invoke(IPC.sbxKitInspect, reference),
   kitValidate: (reference: string): Promise<KitValidationResult> =>
     ipcRenderer.invoke(IPC.sbxKitValidate, reference),
+  policyList: (sandboxName?: string): Promise<PolicyRule[]> =>
+    ipcRenderer.invoke(IPC.sbxPolicyList, sandboxName),
+  policyAllowNetwork: (resources: string, sandboxName?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxPolicyAllowNetwork, resources, sandboxName),
+  policyDenyNetwork: (resources: string, sandboxName?: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxPolicyDenyNetwork, resources, sandboxName),
+  policyRemoveNetwork: (opts: { id?: string; resource?: string; sandboxName?: string }): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxPolicyRemoveNetwork, opts),
+  policyLog: (sandboxName?: string, limit?: number): Promise<PolicyLogResult> =>
+    ipcRenderer.invoke(IPC.sbxPolicyLog, sandboxName, limit),
+  policyInit: (tier: PolicyTier): Promise<void> => ipcRenderer.invoke(IPC.sbxPolicyInit, tier),
+  policyReset: (): Promise<void> => ipcRenderer.invoke(IPC.sbxPolicyReset),
+  getLastAppliedPolicyTier: (): Promise<PolicyTier | null> =>
+    ipcRenderer.invoke(IPC.settingsGetLastAppliedPolicyTier),
+  mcpList: (): Promise<McpServerSummary[]> => ipcRenderer.invoke(IPC.sbxMcpList),
+  mcpInspect: (name: string): Promise<McpServerDetails> => ipcRenderer.invoke(IPC.sbxMcpInspect, name),
+  mcpAdd: (name: string, opts: McpAddOptions): Promise<void> => ipcRenderer.invoke(IPC.sbxMcpAdd, name, opts),
+  mcpAuth: (name: string): Promise<void> => ipcRenderer.invoke(IPC.sbxMcpAuth, name),
+  mcpAuthStatus: (): Promise<McpAuthStatus[]> => ipcRenderer.invoke(IPC.sbxMcpAuthStatus),
+  mcpAuthRemove: (name: string): Promise<void> => ipcRenderer.invoke(IPC.sbxMcpAuthRemove, name),
+  mcpRemove: (name: string): Promise<void> => ipcRenderer.invoke(IPC.sbxMcpRemove, name),
+  mcpLoad: (name: string, sandboxName: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxMcpLoad, name, sandboxName),
   pickWorkspaceFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickFolder),
   pickKitReference: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickKitReference),
   startChatSession: (
