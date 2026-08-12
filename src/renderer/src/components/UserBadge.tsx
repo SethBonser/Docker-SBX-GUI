@@ -1,12 +1,19 @@
 import { useState } from 'react'
-import { useHealth } from '@renderer/state/queries'
+import { useDefaultPermissionMode, useDefaultView, useHealth } from '@renderer/state/queries'
+import { useSetDefaultPermissionMode, useSetDefaultView } from '@renderer/state/mutations'
+import { PERMISSION_MODE_OPTIONS } from '@renderer/permissionModes'
 import { useQueryClient } from '@tanstack/react-query'
+import type { ClaudePermissionMode, DefaultView } from '@shared/types'
 
 const DOCKER_HUB_URL = 'https://hub.docker.com'
 const SBX_DOCS_URL = 'https://docs.docker.com/ai/sandboxes/'
 
 export function UserBadge(): JSX.Element {
   const health = useHealth()
+  const defaultView = useDefaultView()
+  const setDefaultView = useSetDefaultView()
+  const defaultPermissionMode = useDefaultPermissionMode()
+  const setDefaultPermissionMode = useSetDefaultPermissionMode()
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [signingIn, setSigningIn] = useState(false)
@@ -89,6 +96,42 @@ export function UserBadge(): JSX.Element {
                 {signingOut ? 'Signing out…' : 'Log out'}
               </button>
             )}
+
+            <div className="my-2 border-t border-slate-800" />
+
+            <div className="px-2 py-1 text-xs text-slate-500">Default sandbox view</div>
+            <div className="flex gap-1 px-2 pb-1">
+              {(['chat', 'terminal'] as const).map((view) => (
+                <button
+                  key={view}
+                  onClick={() => setDefaultView.mutate(view as DefaultView)}
+                  className={`flex-1 rounded-md px-2 py-1 text-xs capitalize ${
+                    defaultView.data === view
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  {view}
+                </button>
+              ))}
+            </div>
+
+            <div className="px-2 py-1 text-xs text-slate-500">Default chat permissions</div>
+            <div className="px-2 pb-1">
+              <select
+                value={defaultPermissionMode.data ?? 'default'}
+                onChange={(e) =>
+                  setDefaultPermissionMode.mutate(e.target.value as ClaudePermissionMode)
+                }
+                className="w-full rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+              >
+                {PERMISSION_MODE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="my-2 border-t border-slate-800" />
 

@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Badge } from '@renderer/components/ui/Badge'
 import { Button } from '@renderer/components/ui/Button'
 import { useChatStore, type ChatMessage, type SessionStatus } from '@renderer/state/chatStore'
+import { useDefaultPermissionMode } from '@renderer/state/queries'
+import { PERMISSION_MODE_OPTIONS } from '@renderer/permissionModes'
 import { Markdown } from './Markdown'
+import type { ClaudePermissionMode } from '@shared/types'
 
 const STATUS_LABEL: Record<SessionStatus, string> = {
   idle: 'Not started',
@@ -22,20 +25,40 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   const [sending, setSending] = useState(false)
   const [needsLogin, setNeedsLogin] = useState(false)
   const [signingIn, setSigningIn] = useState(false)
+  const [permissionMode, setPermissionMode] = useState<ClaudePermissionMode>('default')
+  const defaultPermissionMode = useDefaultPermissionMode()
+  const startedRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const unsupported = agent !== 'claude'
 
+  // Subscription must always symmetrically subscribe/unsubscribe on every effect run — React
+  // (StrictMode in dev especially) can legitimately run setup -> cleanup -> setup again on the
+  // same mount, and gating this behind a "only once" ref would tear down the listener on the
+  // cleanup pass and then skip resubscribing, leaving the renderer permanently deaf to a chat
+  // session that's actually alive and running in the main process.
   useEffect(() => {
     if (unsupported) return
     ensureSession(sandboxName)
     const unsubscribe = window.sbxApi.onChatEvent(sandboxName, (event) => handleEvent(sandboxName, event))
-    window.sbxApi.startChatSession(sandboxName, agent).catch((err: Error) => {
-      handleEvent(sandboxName, { type: 'error', message: err.message })
-    })
     return unsubscribe
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sandboxName, agent])
+  }, [sandboxName, agent, unsupported])
+
+  // Separately, actually start the session exactly once, waiting for the saved default
+  // permission mode to load first so it launches with the user's real preference instead of
+  // always starting 'default' and needing a restart. This has no meaningful cleanup (starting
+  // twice is already a no-op in the main process), so it's safe for startedRef to survive a
+  // StrictMode double-invoke — unlike the subscription above, nothing here needs to be undone.
+  useEffect(() => {
+    if (unsupported || startedRef.current) return
+    if (defaultPermissionMode.data === undefined) return
+    startedRef.current = true
+    setPermissionMode(defaultPermissionMode.data)
+    window.sbxApi.startChatSession(sandboxName, agent, defaultPermissionMode.data).catch((err: Error) => {
+      handleEvent(sandboxName, { type: 'error', message: err.message })
+    })
+  }, [sandboxName, agent, unsupported, defaultPermissionMode.data])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
@@ -85,12 +108,36 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     }
   }
 
+  async function handlePermissionModeChange(mode: ClaudePermissionMode): Promise<void> {
+    setPermissionMode(mode)
+    // The mode is a spawn-time flag — apply it by restarting the session (a no-op stop if
+    // nothing is running yet).
+    await window.sbxApi.stopChatSession(sandboxName)
+    await window.sbxApi.startChatSession(sandboxName, agent, mode).catch((err: Error) => {
+      handleEvent(sandboxName, { type: 'error', message: err.message })
+    })
+  }
+
   const status = session?.status ?? 'idle'
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
         <span className="text-sm text-slate-400">{STATUS_LABEL[status]}</span>
+        <label className="flex items-center gap-2 text-xs text-slate-500">
+          Permissions
+          <select
+            value={permissionMode}
+            onChange={(e) => void handlePermissionModeChange(e.target.value as ClaudePermissionMode)}
+            className="rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+          >
+            {PERMISSION_MODE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-auto py-3">
@@ -148,6 +195,22 @@ function MessageBubble({ message }: { message: ChatMessage }): JSX.Element {
     )
   }
   if (message.kind === 'tool') {
+    if (message.blockedReason) {
+      return (
+        <div className="max-w-[85%] rounded-lg border border-amber-900 bg-amber-950 px-3 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <Badge tone="warning">{message.name} blocked</Badge>
+          </div>
+          <p className="mt-2 text-amber-300">{message.blockedReason}</p>
+          <p className="mt-1 text-amber-400/70">
+            Sandbox policy blocked this automatically — there's no in-chat "approve" step for a
+            specific command. Switch to the Terminal tab to run it interactively, or raise
+            Permissions above to "Auto" (works around it, slower) or "Bypass all checks" for
+            this session.
+          </p>
+        </div>
+      )
+    }
     return (
       <div className="max-w-[85%] rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
         <div className="flex items-center gap-2">

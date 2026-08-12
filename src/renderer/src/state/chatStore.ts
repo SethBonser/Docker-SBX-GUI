@@ -12,6 +12,7 @@ export type ChatMessage =
       result?: string
       isError?: boolean
       resultPending: boolean
+      blockedReason?: string
     }
   | { kind: 'error'; id: string; message: string }
 
@@ -118,6 +119,28 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               result: event.content,
               isError: event.isError,
               resultPending: false
+            })
+          }
+          return { sessions: { ...state.sessions, [sandboxName]: { status, messages: updated } } }
+        }
+
+        case 'permission_denied': {
+          let found = false
+          const updated = messages.map((m) => {
+            if (m.kind === 'tool' && m.id === event.toolUseId) {
+              found = true
+              return { ...m, blockedReason: event.reason, resultPending: false }
+            }
+            return m
+          })
+          if (!found) {
+            updated.push({
+              kind: 'tool',
+              id: event.toolUseId || nextId(),
+              name: event.toolName,
+              input: undefined,
+              resultPending: false,
+              blockedReason: event.reason
             })
           }
           return { sessions: { ...state.sessions, [sandboxName]: { status, messages: updated } } }

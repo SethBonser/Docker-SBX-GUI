@@ -1,7 +1,7 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { createInterface } from 'readline'
 import type { AgentSessionAdapter } from './AgentSessionAdapter'
-import type { AgentSessionEvent } from '@shared/types'
+import type { AgentSessionEvent, ClaudePermissionMode } from '@shared/types'
 
 // Ground-truth wire protocol confirmed live against sbx v0.38.0 / Claude Code 2.1.221:
 //   sbx exec -i <sandbox> claude -p --output-format stream-json --input-format stream-json --include-partial-messages
@@ -32,6 +32,9 @@ interface RawStreamEvent {
   }
   session_id?: string
   subtype?: string
+  tool_name?: string
+  tool_use_id?: string
+  decision_reason?: string
 }
 
 function toolResultToString(content: RawContentBlock['content']): string {
@@ -50,7 +53,10 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
   private handlers: Array<(e: AgentSessionEvent) => void> = []
   private sessionId: string | null = null
 
-  constructor(private readonly sandboxName: string) {}
+  constructor(
+    private readonly sandboxName: string,
+    private readonly permissionMode: ClaudePermissionMode = 'default'
+  ) {}
 
   private emit(event: AgentSessionEvent): void {
     for (const h of this.handlers) h(event)
@@ -72,27 +78,41 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
 
     this.emit({ type: 'status', status: 'connecting' })
 
-    const child = spawn(
-      'sbx',
-      [
-        'exec',
-        '-i',
-        this.sandboxName,
-        'claude',
-        '-p',
-        '--output-format',
-        'stream-json',
-        '--input-format',
-        'stream-json',
-        '--include-partial-messages',
-        '--verbose'
-      ],
-      { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }
-    )
+    const args = [
+      'exec',
+      '-i',
+      this.sandboxName,
+      'claude',
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--input-format',
+      'stream-json',
+      '--include-partial-messages',
+      '--verbose'
+    ]
+    // Confirmed live: omitting this flag entirely (rather than passing "default") gives the
+    // CLI's normal default behavior — only add it when the user has chosen something else.
+    if (this.permissionMode !== 'default') {
+      args.push('--permission-mode', this.permissionMode)
+    }
+
+    const child = spawn('sbx', args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
 
     const rl = createInterface({ input: child.stdout })
     rl.on('line', (line) => this.handleLine(line))
+
+    // Confirmed live: the CLI's own "system/init" event (previously used to signal ready)
+    // does NOT print until after the *first* stdin message is sent — it can't be used as a
+    // connection-readiness signal, since that would mean "ready" never fires until the user
+    // has already sent something. The process's own 'spawn' event (fired once the OS process
+    // has actually launched, vs. e.g. an ENOENT failure) is the real readiness signal: stdin
+    // is safely writable from that point on, whatever is written just buffers until the CLI
+    // gets around to reading it.
+    child.on('spawn', () => {
+      this.emit({ type: 'status', status: 'ready' })
+    })
 
     child.on('error', (err) => {
       this.emit({ type: 'error', message: err.message })
@@ -120,8 +140,23 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
     }
 
     if (evt.type === 'system' && evt.subtype === 'init') {
+      // Status is already 'ready' from the process's own 'spawn' event — this just captures
+      // the session id for potential future --resume support.
       this.sessionId = evt.session_id ?? this.sessionId
-      this.emit({ type: 'status', status: 'ready' })
+      return
+    }
+
+    // Confirmed live: this is an immediate, final auto-denial — there is no bidirectional
+    // "ask and wait" channel to respond to for this specific tool_use. The corresponding
+    // tool_result (handled below) carries the same reason text; this event exists so the UI
+    // can render a purpose-built "blocked by sandbox policy" treatment instead of a generic error.
+    if (evt.type === 'system' && evt.subtype === 'permission_denied') {
+      this.emit({
+        type: 'permission_denied',
+        toolUseId: evt.tool_use_id ?? '',
+        toolName: evt.tool_name ?? 'unknown_tool',
+        reason: evt.decision_reason ?? 'Blocked by sandbox policy'
+      })
       return
     }
 

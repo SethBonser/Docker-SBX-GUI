@@ -7,6 +7,14 @@ import { SbxCliError } from '../sbx/errors'
 import { pickWorkspaceFolder, pickKitReference } from '../dialogs'
 import { agentSessionManager } from '../agents/AgentSessionManager'
 import { loginClaudeViaPty } from '../agents/claudePtyLogin'
+import { terminalSessionManager } from '../agents/TerminalSessionManager'
+import {
+  getDefaultView,
+  setDefaultView,
+  getDefaultPermissionMode,
+  setDefaultPermissionMode
+} from '../settings'
+import type { ClaudePermissionMode, DefaultView } from '@shared/types'
 
 /** Re-throw plain, serializable errors so renderer catch blocks get useful info back over IPC. */
 function toIpcError(err: unknown): Error {
@@ -109,9 +117,12 @@ export function registerIpcHandlers(): void {
     return pickKitReference(activeWindow(event))
   })
 
-  ipcMain.handle(IPC.chatStart, async (_event, sandboxName: string, agent: string) => {
-    await agentSessionManager.ensureStarted(sandboxName, agent)
-  })
+  ipcMain.handle(
+    IPC.chatStart,
+    async (_event, sandboxName: string, agent: string, permissionMode?: ClaudePermissionMode) => {
+      await agentSessionManager.ensureStarted(sandboxName, agent, permissionMode)
+    }
+  )
 
   ipcMain.handle(IPC.chatSendMessage, async (_event, sandboxName: string, text: string) => {
     await agentSessionManager.sendMessage(sandboxName, text)
@@ -139,6 +150,34 @@ export function registerIpcHandlers(): void {
     } catch (err) {
       throw toIpcError(err)
     }
+  })
+
+  ipcMain.handle(IPC.terminalStart, async (_event, sandboxName: string) => {
+    await terminalSessionManager.ensureStarted(sandboxName)
+  })
+
+  ipcMain.handle(IPC.terminalInput, (_event, sandboxName: string, data: string) => {
+    terminalSessionManager.write(sandboxName, data)
+  })
+
+  ipcMain.handle(IPC.terminalResize, (_event, sandboxName: string, cols: number, rows: number) => {
+    terminalSessionManager.resize(sandboxName, cols, rows)
+  })
+
+  ipcMain.handle(IPC.terminalStop, (_event, sandboxName: string) => {
+    terminalSessionManager.stop(sandboxName)
+  })
+
+  ipcMain.handle(IPC.settingsGetDefaultPermissionMode, () => getDefaultPermissionMode())
+
+  ipcMain.handle(IPC.settingsSetDefaultPermissionMode, (_event, mode: ClaudePermissionMode) => {
+    setDefaultPermissionMode(mode)
+  })
+
+  ipcMain.handle(IPC.settingsGetDefaultView, () => getDefaultView())
+
+  ipcMain.handle(IPC.settingsSetDefaultView, (_event, view: DefaultView) => {
+    setDefaultView(view)
   })
 
   ipcMain.handle(IPC.shellOpenExternal, async (_event, url: string) => {

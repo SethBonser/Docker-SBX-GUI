@@ -3,7 +3,9 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { IPC } from '@shared/ipc-contract'
 import type {
   AgentSessionEvent,
+  ClaudePermissionMode,
   CreateSandboxOptions,
+  DefaultView,
   HealthStatus,
   KitDetails,
   KitValidationResult,
@@ -15,6 +17,11 @@ import type {
 interface ChatEventPayload {
   sandboxName: string
   event: AgentSessionEvent
+}
+
+interface TerminalDataPayload {
+  sandboxName: string
+  data: string
 }
 
 // Narrow, typed surface exposed to the renderer. Never expose raw ipcRenderer.
@@ -37,8 +44,11 @@ const sbxApi = {
     ipcRenderer.invoke(IPC.sbxKitValidate, reference),
   pickWorkspaceFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickFolder),
   pickKitReference: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickKitReference),
-  startChatSession: (sandboxName: string, agent: string): Promise<void> =>
-    ipcRenderer.invoke(IPC.chatStart, sandboxName, agent),
+  startChatSession: (
+    sandboxName: string,
+    agent: string,
+    permissionMode?: ClaudePermissionMode
+  ): Promise<void> => ipcRenderer.invoke(IPC.chatStart, sandboxName, agent, permissionMode),
   sendChatMessage: (sandboxName: string, text: string): Promise<void> =>
     ipcRenderer.invoke(IPC.chatSendMessage, sandboxName, text),
   stopChatSession: (sandboxName: string): Promise<void> => ipcRenderer.invoke(IPC.chatStop, sandboxName),
@@ -53,7 +63,27 @@ const sbxApi = {
   },
   login: (): Promise<void> => ipcRenderer.invoke(IPC.sbxLogin),
   logout: (): Promise<void> => ipcRenderer.invoke(IPC.sbxLogout),
-  openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.shellOpenExternal, url)
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.shellOpenExternal, url),
+  startTerminal: (sandboxName: string): Promise<void> => ipcRenderer.invoke(IPC.terminalStart, sandboxName),
+  sendTerminalInput: (sandboxName: string, data: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.terminalInput, sandboxName, data),
+  resizeTerminal: (sandboxName: string, cols: number, rows: number): Promise<void> =>
+    ipcRenderer.invoke(IPC.terminalResize, sandboxName, cols, rows),
+  stopTerminal: (sandboxName: string): Promise<void> => ipcRenderer.invoke(IPC.terminalStop, sandboxName),
+  onTerminalData: (sandboxName: string, handler: (data: string) => void): (() => void) => {
+    const listener = (_: unknown, payload: TerminalDataPayload): void => {
+      if (payload.sandboxName === sandboxName) handler(payload.data)
+    }
+    ipcRenderer.on(IPC.terminalData, listener)
+    return () => ipcRenderer.removeListener(IPC.terminalData, listener)
+  },
+  getDefaultView: (): Promise<DefaultView> => ipcRenderer.invoke(IPC.settingsGetDefaultView),
+  setDefaultView: (view: DefaultView): Promise<void> =>
+    ipcRenderer.invoke(IPC.settingsSetDefaultView, view),
+  getDefaultPermissionMode: (): Promise<ClaudePermissionMode> =>
+    ipcRenderer.invoke(IPC.settingsGetDefaultPermissionMode),
+  setDefaultPermissionMode: (mode: ClaudePermissionMode): Promise<void> =>
+    ipcRenderer.invoke(IPC.settingsSetDefaultPermissionMode, mode)
 }
 
 export type SbxApi = typeof sbxApi

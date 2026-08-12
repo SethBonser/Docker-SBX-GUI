@@ -63,12 +63,21 @@ export function loginClaudeViaPty(
             term!.write('/login\r')
           }
 
-          if (sentLogin && !sentSelection && /select login method/i.test(buffer)) {
+          // This TUI renders justified text with cursor-forward escapes (e.g. "\x1b[1C")
+          // *instead of* literal spaces between words. stripAnsi removes those escapes as
+          // zero characters, so "Select login method:" arrives in `buffer` as
+          // "Selectloginmethod:" — every multi-word phrase matched below must tolerate zero
+          // inter-word whitespace (\s*, not a literal space) or it will never match.
+          if (sentLogin && !sentSelection && /select\s*login\s*method/i.test(buffer)) {
             sentSelection = true
             term!.write('1\r') // "Claude account with subscription"
           }
 
           if (!urlOpened) {
+            // Per-chunk raw match — confirmed reliable across repeated live tests. (A buffer-
+            // accumulated fallback was tried and tested *worse*: the terminal's line-wrapping
+            // inserts real whitespace mid-URL that breaks a \S+ match against the stripped,
+            // accumulated buffer. Per-chunk is simpler and has proven to actually work.)
             const match = raw.match(/https?:\/\/[^\s\x1b\x07]+/)
             if (match) {
               urlOpened = true
@@ -77,9 +86,9 @@ export function loginClaudeViaPty(
             }
           }
 
-          if (/login successful/i.test(buffer)) {
+          if (/login\s*successful/i.test(buffer)) {
             finish({ success: true, message: 'Signed in to Claude.' })
-          } else if (/already logged in/i.test(buffer)) {
+          } else if (/already\s*logged\s*in/i.test(buffer)) {
             finish({ success: true, message: 'Already signed in.' })
           }
         })

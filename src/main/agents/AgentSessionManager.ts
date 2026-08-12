@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { IPC } from '@shared/ipc-contract'
-import type { AgentSessionEvent } from '@shared/types'
+import type { AgentSessionEvent, ClaudePermissionMode } from '@shared/types'
 import type { AgentSessionAdapter } from './AgentSessionAdapter'
 import { ClaudeStreamJsonAdapter } from './ClaudeStreamJsonAdapter'
 
@@ -19,7 +19,11 @@ class AgentSessionManagerImpl {
     }
   }
 
-  async ensureStarted(sandboxName: string, agent: string): Promise<void> {
+  async ensureStarted(
+    sandboxName: string,
+    agent: string,
+    permissionMode: ClaudePermissionMode = 'default'
+  ): Promise<void> {
     if (this.sessions.has(sandboxName)) return
 
     // Only Claude has a confirmed headless/structured protocol today; other agents get a
@@ -28,7 +32,7 @@ class AgentSessionManagerImpl {
       throw new Error(`No chat adapter available yet for agent "${agent}".`)
     }
 
-    const adapter = new ClaudeStreamJsonAdapter(sandboxName)
+    const adapter = new ClaudeStreamJsonAdapter(sandboxName, permissionMode)
     adapter.onEvent((event) => this.broadcast(sandboxName, event))
     this.sessions.set(sandboxName, adapter)
     await adapter.start()

@@ -72,6 +72,8 @@ export interface KitCommand {
   background?: boolean
 }
 
+export type DefaultView = 'chat' | 'terminal'
+
 export interface PtyLoginResult {
   success: boolean
   message: string
@@ -87,8 +89,32 @@ export type AgentSessionEvent =
   | { type: 'assistant_message'; text: string; messageId: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean }
+  | { type: 'permission_denied'; toolUseId: string; toolName: string; reason: string }
   | { type: 'raw_output'; text: string } // generic fallback adapter only
   | { type: 'error'; message: string }
+
+// Confirmed live: headless stream-json mode auto-denies risky Bash commands (process
+// substitution, complex chaining, etc.) with no bidirectional "ask and wait" channel — there
+// is nothing to respond to per-request. The only real lever is the session-level mode it's
+// launched with. All 6 of the CLI's --permission-mode choices were tested/reasoned through:
+//   - "default"           simple commands pass, risky patterns auto-denied
+//   - "acceptEdits"       identical to default for Bash — only auto-accepts file edits
+//   - "auto"              gets risky commands through, but reasons/works around problems
+//                         instead of just running them (~3x slower/costlier than bypass)
+//   - "dontAsk"           MORE restrictive than default — blanket-denies Bash outright
+//   - "bypassPermissions" everything allowed, fast, no denials
+//   - "plan"              genuinely different: writes a plan and gets permanently stuck
+//                         there — the tool needed to exit plan mode isn't available
+//                         headlessly, so it never executes anything. Good for pure
+//                         read-only exploration, not for getting things done.
+//   - "manual"            excluded: needs a real TTY (hangs), same constraint as /login
+export type ClaudePermissionMode =
+  | 'default'
+  | 'acceptEdits'
+  | 'auto'
+  | 'dontAsk'
+  | 'bypassPermissions'
+  | 'plan'
 
 export interface KitDetails {
   manifest: {
