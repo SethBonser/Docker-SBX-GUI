@@ -1,4 +1,4 @@
-import { execFile } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import { SbxCliError, classifyFailure } from './errors'
 import {
   parseLsJson,
@@ -7,11 +7,13 @@ import {
   parsePolicyLsJson,
   parseMcpLsText,
   parseMcpInspectText,
-  parseMcpAuthStatusJson
+  parseMcpAuthStatusJson,
+  parseSecretLsText
 } from './parsers'
 import { runOAuthFlow } from './oauthFlow'
 import type {
   CreateSandboxOptions,
+  DiagnoseResult,
   KitDetails,
   KitValidationResult,
   McpAddOptions,
@@ -22,7 +24,8 @@ import type {
   PolicyRule,
   PolicyTier,
   PortMapping,
-  SandboxSummary
+  SandboxSummary,
+  SecretEntry
 } from '@shared/types'
 
 interface RunResult {
@@ -65,6 +68,83 @@ function run(args: string[], opts: { timeoutMs?: number } = {}): Promise<RunResu
   })
 }
 
+/**
+ * Confirmed live: `sbx diagnose` exits non-zero when a check fails, even though stdout still
+ * carries a complete, valid JSON report — a failing check is meaningful data to show, not a
+ * command failure to swallow. `run()`'s reject-on-nonzero-exit behavior would discard that
+ * stdout entirely, so this variant only rejects on a genuinely missing binary.
+ */
+function runIgnoringExitCode(args: string[], opts: { timeoutMs?: number } = {}): Promise<RunResult> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      binaryPath,
+      args,
+      { timeout: opts.timeoutMs ?? 30_000, windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+          reject(
+            new SbxCliError('BinaryNotFound', `Could not find the "sbx" executable on PATH.`, {
+              stderr: String(error.message)
+            })
+          )
+          return
+        }
+        const code = (error as NodeJS.ErrnoException & { code?: number })?.code as number | undefined
+        const exitCode = typeof code === 'number' ? code : error ? 1 : 0
+        resolve({ stdout, stderr, code: exitCode })
+      }
+    )
+  })
+}
+
+/**
+ * `execFile` has no way to write to the child's stdin, but `sbx secret set <service>` (without
+ * --oauth) reads the secret value from stdin rather than argv — confirmed live this keeps the
+ * value out of shell history / process argv, matching the CLI's own documented example
+ * (`echo "$KEY" | sbx secret set anthropic`). This is the same spawn+stdio pattern the chat
+ * adapter uses, just collecting output instead of streaming it.
+ */
+function runWithStdin(args: string[], input: string, opts: { timeoutMs?: number } = {}): Promise<RunResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binaryPath, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      child.kill()
+      reject(new SbxCliError('Generic', `Command timed out: sbx ${args.join(' ')}`, { stderr }))
+    }, opts.timeoutMs ?? 15_000)
+
+    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()))
+    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()))
+
+    child.on('error', (err) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(err)
+    })
+
+    child.on('exit', (code) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      const exitCode = code ?? 1
+      if (exitCode !== 0) {
+        reject(classifyFailure(stderr, exitCode))
+        return
+      }
+      resolve({ stdout, stderr, code: exitCode })
+    })
+
+    child.stdin.write(input)
+    child.stdin.end()
+  })
+}
+
 export interface SbxVersionInfo {
   raw: string
   version: string | null
@@ -87,6 +167,25 @@ async function daemonStatus(): Promise<DaemonStatusValue> {
   } catch {
     return 'unknown'
   }
+}
+
+async function daemonStart(): Promise<void> {
+  await run(['daemon', 'start', '-d'], { timeoutMs: 30_000 })
+}
+
+/** Stops sandboxd — any running sandbox becomes unreachable until it's started again. */
+async function daemonStop(): Promise<void> {
+  await run(['daemon', 'stop'], { timeoutMs: 30_000 })
+}
+
+/** Same disruption as daemonStop, just start-again-automatically. The caller confirms first. */
+async function daemonRestart(): Promise<void> {
+  await run(['daemon', 'restart'], { timeoutMs: 30_000 })
+}
+
+async function diagnose(): Promise<DiagnoseResult> {
+  const { stdout } = await runIgnoringExitCode(['diagnose', '-o', 'json'], { timeoutMs: 30_000 })
+  return JSON.parse(stdout) as DiagnoseResult
 }
 
 /**
@@ -304,6 +403,38 @@ async function mcpLoad(name: string, sandboxName: string): Promise<void> {
   await run(['mcp', 'load', name, '--sandbox', sandboxName], { timeoutMs: 30_000 })
 }
 
+async function secretList(opts: { global?: boolean; sandboxName?: string; service?: string } = {}): Promise<SecretEntry[]> {
+  const args = ['secret', 'ls']
+  if (opts.global) args.push('-g')
+  if (opts.sandboxName) args.push('--sandbox', opts.sandboxName)
+  if (opts.service) args.push('--service', opts.service)
+  const { stdout } = await run(args)
+  return parseSecretLsText(stdout)
+}
+
+/** Plain API-key path — reads the value from stdin, never argv/shell history (see runWithStdin). */
+async function secretSet(service: string, value: string, opts: { sandboxName?: string } = {}): Promise<void> {
+  const args = ['secret', 'set', service]
+  if (opts.sandboxName) args.push('--sandbox', opts.sandboxName)
+  await runWithStdin(args, `${value}\n`, { timeoutMs: 20_000 })
+}
+
+/**
+ * Confirmed live: only `openai` accepts `--oauth` ("openai/global only" per --help); `anthropic`
+ * explicitly errors ("anthropic OAuth cannot be started from `sbx secret set`; sign in from
+ * inside the Claude sandbox") — that path is `loginClaudeViaPty` instead, already wired up
+ * elsewhere. Always global, regardless of any --sandbox scope the caller might pass.
+ */
+async function secretSetOAuth(service: string): Promise<void> {
+  await runOAuthFlow(['secret', 'set', service, '--oauth'])
+}
+
+async function secretRemove(service: string, opts: { sandboxName?: string } = {}): Promise<void> {
+  const args = ['secret', 'rm', service, '-f']
+  if (opts.sandboxName) args.push('--sandbox', opts.sandboxName)
+  await run(args)
+}
+
 export const sbxCli = {
   version,
   daemonStatus,
@@ -334,5 +465,13 @@ export const sbxCli = {
   mcpAuthStatus,
   mcpAuthRemove,
   mcpRemove,
-  mcpLoad
+  mcpLoad,
+  secretList,
+  secretSet,
+  secretSetOAuth,
+  secretRemove,
+  daemonStart,
+  daemonStop,
+  daemonRestart,
+  diagnose
 }

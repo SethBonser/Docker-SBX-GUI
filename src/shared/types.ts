@@ -188,6 +188,51 @@ export interface McpAuthStatus {
   status: string
 }
 
+// Confirmed live via `sbx secret set --help` (sbx v0.38.0). Only `openai` accepts --oauth;
+// `anthropic` explicitly refuses it ("sign in from inside the Claude sandbox" instead) — that
+// path reuses the existing pty-based Claude login flow (`loginClaude`), not this list.
+export const SECRET_SERVICES = [
+  'anthropic',
+  'cursor',
+  'droid',
+  'github',
+  'google',
+  'groq',
+  'mistral',
+  'nebius',
+  'openai',
+  'openrouter',
+  'xai'
+] as const
+export type SecretService = (typeof SECRET_SERVICES)[number]
+
+// scope is "(global)" or a sandbox name, exactly as `sbx secret ls` prints it. status is the
+// raw SECRET column text ("(stored)" / "(oauth configured)") — kept as free text rather than a
+// closed enum since only those two values have been confirmed live.
+export interface SecretEntry {
+  scope: string
+  type: string
+  name: string
+  status: string
+}
+
+// Ground-truth shape confirmed live against `sbx diagnose -o json` (sbx v0.38.0). status is one
+// of "pass" | "warn" | "fail" | "skip" per the CLI's own summary counts, kept as free text since
+// only those four have been observed.
+export interface DiagnoseCheck {
+  name: string
+  status: string
+  message: string
+  detail: string
+  hint: string
+}
+
+export interface DiagnoseResult {
+  version: string
+  checks: DiagnoseCheck[]
+  summary: { pass: number; warn: number; fail: number; skip: number }
+}
+
 export interface KitDetails {
   manifest: {
     schemaVersion: string

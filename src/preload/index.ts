@@ -6,6 +6,7 @@ import type {
   ClaudePermissionMode,
   CreateSandboxOptions,
   DefaultView,
+  DiagnoseResult,
   HealthStatus,
   KitDetails,
   KitValidationResult,
@@ -18,7 +19,8 @@ import type {
   PolicyTier,
   PortMapping,
   PtyLoginResult,
-  SandboxSummary
+  SandboxSummary,
+  SecretEntry
 } from '@shared/types'
 
 interface ChatEventPayload {
@@ -72,6 +74,17 @@ const sbxApi = {
   mcpRemove: (name: string): Promise<void> => ipcRenderer.invoke(IPC.sbxMcpRemove, name),
   mcpLoad: (name: string, sandboxName: string): Promise<void> =>
     ipcRenderer.invoke(IPC.sbxMcpLoad, name, sandboxName),
+  secretList: (opts?: { global?: boolean; sandboxName?: string; service?: string }): Promise<SecretEntry[]> =>
+    ipcRenderer.invoke(IPC.sbxSecretList, opts ?? {}),
+  secretSet: (service: string, value: string, opts?: { sandboxName?: string }): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxSecretSet, service, value, opts ?? {}),
+  secretSetOAuth: (service: string): Promise<void> => ipcRenderer.invoke(IPC.sbxSecretSetOAuth, service),
+  secretRemove: (service: string, opts?: { sandboxName?: string }): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxSecretRemove, service, opts ?? {}),
+  daemonStart: (): Promise<void> => ipcRenderer.invoke(IPC.sbxDaemonStart),
+  daemonStop: (): Promise<void> => ipcRenderer.invoke(IPC.sbxDaemonStop),
+  daemonRestart: (): Promise<void> => ipcRenderer.invoke(IPC.sbxDaemonRestart),
+  diagnose: (): Promise<DiagnoseResult> => ipcRenderer.invoke(IPC.sbxDiagnose),
   pickWorkspaceFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickFolder),
   pickKitReference: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickKitReference),
   startChatSession: (

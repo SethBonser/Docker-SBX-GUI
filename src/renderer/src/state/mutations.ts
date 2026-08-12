@@ -171,3 +171,66 @@ export function useLoadMcpServer() {
       window.sbxApi.mcpLoad(name, sandboxName)
   })
 }
+
+export function useSetSecret() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ service, value, sandboxName }: { service: string; value: string; sandboxName?: string }) =>
+      window.sbxApi.secretSet(service, value, { sandboxName }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['secrets'] })
+  })
+}
+
+/** Long-running: blocks on the browser OAuth consent (openai only — see sbxCli.ts). */
+export function useSetSecretOAuth() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (service: string) => window.sbxApi.secretSetOAuth(service),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['secrets'] })
+  })
+}
+
+export function useRemoveSecret() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ service, sandboxName }: { service: string; sandboxName?: string }) =>
+      window.sbxApi.secretRemove(service, { sandboxName }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['secrets'] })
+  })
+}
+
+/** Disruptive: stops/restarts every running sandbox's connection to the daemon. Caller confirms first. */
+function useDaemonAction(action: 'start' | 'stop' | 'restart') {
+  const queryClient = useQueryClient()
+  const fn =
+    action === 'start'
+      ? window.sbxApi.daemonStart
+      : action === 'stop'
+        ? window.sbxApi.daemonStop
+        : window.sbxApi.daemonRestart
+  return useMutation({
+    mutationFn: () => fn(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['health'] })
+      queryClient.invalidateQueries({ queryKey: ['sandboxes'] })
+    }
+  })
+}
+
+export function useDaemonStart() {
+  return useDaemonAction('start')
+}
+
+export function useDaemonStop() {
+  return useDaemonAction('stop')
+}
+
+export function useDaemonRestart() {
+  return useDaemonAction('restart')
+}
+
+export function useDiagnose() {
+  return useMutation({
+    mutationFn: () => window.sbxApi.diagnose()
+  })
+}

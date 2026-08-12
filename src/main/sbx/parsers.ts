@@ -6,7 +6,8 @@ import type {
   PolicyRule,
   PortMapping,
   SandboxStatus,
-  SandboxSummary
+  SandboxSummary,
+  SecretEntry
 } from '@shared/types'
 
 // Ground-truth shape confirmed against a live `sbx ls --json` (sbx v0.38.0):
@@ -144,6 +145,23 @@ interface RawMcpAuthStatus {
 export function parseMcpAuthStatusJson(stdout: string): McpAuthStatus[] {
   const parsed = JSON.parse(stdout) as RawMcpAuthStatus[]
   return parsed.map((r) => ({ serverName: r.server_name, status: r.status }))
+}
+
+// `sbx secret ls` has no --json flag (confirmed live) — parsed from its text table
+// ("SCOPE  TYPE  NAME  SECRET", scope is "(global)" or a sandbox name). An unmatched filter
+// prints a plain "No secrets found for ..." sentence instead of a table, so anything without
+// the SCOPE header is treated as empty rather than guessed at.
+export function parseSecretLsText(stdout: string): SecretEntry[] {
+  const lines = stdout
+    .trim()
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  if (lines.length === 0 || !/^SCOPE\s/i.test(lines[0])) return []
+  return lines.slice(1).map((line) => {
+    const [scope = '', type = '', name = '', status = ''] = line.split(/\s{2,}/)
+    return { scope, type, name, status }
+  })
 }
 
 export function parsePolicyLsJson(stdout: string): PolicyRule[] {

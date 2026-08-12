@@ -6,6 +6,8 @@ import { Dashboard } from '@renderer/routes/Dashboard/Dashboard'
 import { SandboxDetail } from '@renderer/routes/SandboxDetail/SandboxDetail'
 import { GlobalPolicy } from '@renderer/routes/GlobalPolicy'
 import { Mcp } from '@renderer/routes/Mcp'
+import { Secrets } from '@renderer/routes/Secrets'
+import { Settings } from '@renderer/routes/Settings'
 import { Placeholder } from '@renderer/routes/Placeholder'
 
 function App(): JSX.Element {
@@ -17,10 +19,10 @@ function App(): JSX.Element {
             <Route index element={<Dashboard />} />
             <Route path="sandboxes/:name" element={<SandboxDetail />} />
             <Route path="kits" element={<Placeholder title="Kits" />} />
-            <Route path="secrets" element={<Placeholder title="Secrets" />} />
+            <Route path="secrets" element={<Secrets />} />
             <Route path="mcp" element={<Mcp />} />
             <Route path="policy" element={<GlobalPolicy />} />
-            <Route path="settings" element={<Placeholder title="Settings" />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
       </HashRouter>

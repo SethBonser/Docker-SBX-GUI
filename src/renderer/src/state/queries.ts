@@ -8,7 +8,8 @@ import type {
   PolicyRule,
   PolicyTier,
   PortMapping,
-  SandboxSummary
+  SandboxSummary,
+  SecretEntry
 } from '@shared/types'
 
 export function useHealth() {
@@ -89,5 +90,13 @@ export function useMcpAuthStatus() {
   return useQuery<McpAuthStatus[]>({
     queryKey: ['mcp', 'authStatus'],
     queryFn: () => window.sbxApi.mcpAuthStatus()
+  })
+}
+
+/** All entries across every scope (global + every sandbox) — the Secrets page groups by service itself. */
+export function useSecrets() {
+  return useQuery<SecretEntry[]>({
+    queryKey: ['secrets'],
+    queryFn: () => window.sbxApi.secretList()
   })
 }

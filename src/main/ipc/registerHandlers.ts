@@ -240,6 +240,79 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(
+    IPC.sbxSecretList,
+    async (_event, opts: { global?: boolean; sandboxName?: string; service?: string }) => {
+      try {
+        return await sbxCli.secretList(opts)
+      } catch (err) {
+        throw toIpcError(err)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.sbxSecretSet,
+    async (_event, service: string, value: string, opts: { sandboxName?: string }) => {
+      try {
+        await sbxCli.secretSet(service, value, opts)
+      } catch (err) {
+        throw toIpcError(err)
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.sbxSecretSetOAuth, async (_event, service: string) => {
+    try {
+      await sbxCli.secretSetOAuth(service)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(
+    IPC.sbxSecretRemove,
+    async (_event, service: string, opts: { sandboxName?: string }) => {
+      try {
+        await sbxCli.secretRemove(service, opts)
+      } catch (err) {
+        throw toIpcError(err)
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.sbxDaemonStart, async () => {
+    try {
+      await sbxCli.daemonStart()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxDaemonStop, async () => {
+    try {
+      await sbxCli.daemonStop()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxDaemonRestart, async () => {
+    try {
+      await sbxCli.daemonRestart()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxDiagnose, async () => {
+    try {
+      return await sbxCli.diagnose()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
   ipcMain.handle(IPC.dialogPickFolder, async (event) => {
     return pickWorkspaceFolder(activeWindow(event))
   })
