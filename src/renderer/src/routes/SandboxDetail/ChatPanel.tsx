@@ -17,6 +17,11 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 
 const NOT_LOGGED_IN_PATTERN = /not logged in/i
 
+// Every agent with a confirmed headless/structured protocol (see each adapter for the exact
+// wire format and gotchas — every one of these was verified live, never assumed). Anything
+// else falls through to the "basic mode" message below until it gets its own adapter.
+const SUPPORTED_AGENTS = ['claude', 'codex', 'gemini', 'docker-agent']
+
 export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: string }): JSX.Element {
   const navigate = useNavigate()
   const ensureSession = useChatStore((s) => s.ensureSession)
@@ -35,7 +40,10 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   const startedRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const unsupported = agent !== 'claude'
+  const unsupported = !SUPPORTED_AGENTS.includes(agent)
+  // /login, the "Sign in to Claude" banner, and the Permissions picker all drive Claude-specific
+  // mechanisms (the pty login flow, ClaudePermissionMode) that don't exist for the other agents.
+  const isClaude = agent === 'claude'
 
   // Subscription must always symmetrically subscribe/unsubscribe on every effect run — React
   // (StrictMode in dev especially) can legitimately run setup -> cleanup -> setup again on the
@@ -68,7 +76,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
     const last = session?.messages[session.messages.length - 1]
-    if (last?.kind === 'assistant' && NOT_LOGGED_IN_PATTERN.test(last.text)) {
+    if (isClaude && last?.kind === 'assistant' && NOT_LOGGED_IN_PATTERN.test(last.text)) {
       setNeedsLogin(true)
     }
   }, [session?.messages.length])
@@ -91,8 +99,10 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
 
     // "/login" doesn't work over the headless protocol at all (confirmed: it needs a real TTY,
     // same as the interactive /mcp actions) — alias it locally to the pty-based sign-in flow
-    // instead of forwarding it to a session that can't do anything with it.
-    if (text === '/login') {
+    // instead of forwarding it to a session that can't do anything with it. Claude-only: the
+    // other agents have no equivalent pty login flow built, so "/login" just goes through as a
+    // literal message for them (harmless — the model just sees the text).
+    if (isClaude && text === '/login') {
       addUserMessage(sandboxName, text)
       handleEvent(sandboxName, {
         type: 'assistant_message',
@@ -134,7 +144,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   }
 
   async function handleClearChat(): Promise<void> {
-    if (!confirm('Clear this conversation? This ends the current session — Claude will start fresh, with no memory of anything said so far.')) {
+    if (!confirm('Clear this conversation? This ends the current session — the agent will start fresh, with no memory of anything said so far.')) {
       return
     }
     setClearing(true)
@@ -171,20 +181,22 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
         <span className="text-sm text-slate-400">{STATUS_LABEL[status]}</span>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-slate-500">
-            Permissions
-            <select
-              value={permissionMode}
-              onChange={(e) => void handlePermissionModeChange(e.target.value as ClaudePermissionMode)}
-              className="rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
-            >
-              {PERMISSION_MODE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isClaude && (
+            <label className="flex items-center gap-2 text-xs text-slate-500">
+              Permissions
+              <select
+                value={permissionMode}
+                onChange={(e) => void handlePermissionModeChange(e.target.value as ClaudePermissionMode)}
+                className="rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+              >
+                {PERMISSION_MODE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <button
             disabled={clearing || !session?.messages.length}
             onClick={() => void handleClearChat()}
@@ -252,7 +264,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
             }
           }}
           rows={2}
-          placeholder="Message Claude…"
+          placeholder={`Message ${agent}…`}
           className="flex-1 resize-none rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100"
         />
         <Button disabled={sending || !draft.trim()} onClick={() => void handleSend()}>

@@ -3,6 +3,9 @@ import { IPC } from '@shared/ipc-contract'
 import type { AgentSessionEvent, ClaudePermissionMode } from '@shared/types'
 import type { AgentSessionAdapter } from './AgentSessionAdapter'
 import { ClaudeStreamJsonAdapter } from './ClaudeStreamJsonAdapter'
+import { CodexExecAdapter } from './CodexExecAdapter'
+import { GeminiStreamAdapter } from './GeminiStreamAdapter'
+import { DockerAgentAdapter } from './DockerAgentAdapter'
 
 interface ChatEventPayload {
   sandboxName: string
@@ -26,13 +29,23 @@ class AgentSessionManagerImpl {
   ): Promise<void> {
     if (this.sessions.has(sandboxName)) return
 
-    // Only Claude has a confirmed headless/structured protocol today; other agents get a
-    // generic pty-based fallback adapter in a later milestone.
-    if (agent !== 'claude') {
+    // Claude, Codex, Gemini, and docker-agent all have confirmed headless/structured
+    // protocols (each verified live — see the adapters themselves for the exact wire
+    // format and gotchas). Every other agent gets a generic pty-based fallback adapter in
+    // a later milestone; ChatPanel already shows a clear "basic mode" message for those.
+    let adapter: AgentSessionAdapter
+    if (agent === 'claude') {
+      adapter = new ClaudeStreamJsonAdapter(sandboxName, permissionMode)
+    } else if (agent === 'codex') {
+      adapter = new CodexExecAdapter(sandboxName)
+    } else if (agent === 'gemini') {
+      adapter = new GeminiStreamAdapter(sandboxName)
+    } else if (agent === 'docker-agent') {
+      adapter = new DockerAgentAdapter(sandboxName)
+    } else {
       throw new Error(`No chat adapter available yet for agent "${agent}".`)
     }
 
-    const adapter = new ClaudeStreamJsonAdapter(sandboxName, permissionMode)
     adapter.onEvent((event) => this.broadcast(sandboxName, event))
     this.sessions.set(sandboxName, adapter)
     await adapter.start()
