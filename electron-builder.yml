@@ -1,0 +1,32 @@
+appId: com.sethbonser.dockersandboxgui
+productName: Docker Sandbox GUI
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: msi
+      arch: [x64]
+  artifactName: ${productName}-${version}-setup.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.developer-tools
+  # NOTE: unsigned/unnotarized — cannot be built or tested from this Windows machine.
+  # A macOS teammate will need an Apple Developer identity to sign + notarize before distribution.
+linux:
+  target:
+    - AppImage
