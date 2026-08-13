@@ -25,11 +25,22 @@ permissions:
   contents: write
 
 jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check version is X.Y.Z
+        run: |
+          if ! [[ "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must be in X.Y.Z format (e.g. 0.10.0), got: ${{ inputs.version }}"
+            exit 1
+          fi
+
   build-windows:
+    needs: validate-version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -37,7 +48,7 @@ jobs:
       - name: Set package.json version
         run: npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
       - run: npm run build:win
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-installers
           path: |
@@ -46,11 +57,12 @@ jobs:
           if-no-files-found: error
 
   build-macos:
+    needs: validate-version
     runs-on: macos-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -58,7 +70,7 @@ jobs:
       - name: Set package.json version
         run: npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
       - run: npm run build:mac
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-installer
           path: release/*.dmg
@@ -69,7 +81,7 @@ jobs:
     if: always() && needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
