@@ -23,6 +23,10 @@ on:
         required: false
         type: boolean
         default: true
+      notes:
+        description: 'Release notes (leave blank to use the default unsigned-build warning text)'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -125,5 +129,5 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "v${{ inputs.version }}" \
-            --notes "Docker Sandbox GUI v${{ inputs.version }}. Unsigned on every platform — Windows SmartScreen and macOS Gatekeeper will both flag it on first run, and Linux/macOS builds are unverified beyond this pipeline (see README)." \
+            --notes "${{ inputs.notes != '' && inputs.notes || format('Docker Sandbox GUI v{0}. Unsigned on every platform — Windows SmartScreen and macOS Gatekeeper will both flag it on first run, and Linux/macOS builds are unverified beyond this pipeline (see README).', inputs.version) }}" \
             $( [ "${{ inputs.prerelease }}" = "true" ] && echo "--prerelease" )
