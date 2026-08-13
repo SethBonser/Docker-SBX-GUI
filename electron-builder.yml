@@ -29,4 +29,10 @@ mac:
   # A macOS teammate will need an Apple Developer identity to sign + notarize before distribution.
 linux:
   target:
-    - AppImage
+    - target: AppImage
+      arch: [x64]
+  category: Development
+  artifactName: ${productName}-${version}.${ext}
+  # NOTE: unsigned and never actually built/run anywhere yet — cannot be tested from this
+  # Windows machine. Ships via the GitHub Actions release workflow on a real ubuntu-latest
+  # runner; treat it as unverified until someone actually runs the AppImage.

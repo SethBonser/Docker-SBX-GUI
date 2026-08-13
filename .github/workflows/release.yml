@@ -1,13 +1,16 @@
 name: Release
 
 # Manually triggered from the Actions tab ("Run workflow") — you type in the version, nothing is
-# auto-computed from commit history. Builds Windows (nsis + msi) on windows-latest and macOS
-# (dmg) on macos-latest — a real Mac, unlike the Windows machine this project has otherwise been
-# built on — then publishes a single GitHub Release with both platforms' installers attached.
-# The macOS build is allowed to fail without blocking the release: this is the first time it's
-# ever been built anywhere (see README's "Running on macOS" section), so a first-run hiccup
-# shouldn't hold back a Windows release. If it succeeds, its .dmg is included; if not, the
-# release still goes out Windows-only and the workflow run's logs show why macOS failed.
+# auto-computed from commit history. Builds Windows (nsis + msi) on windows-latest, macOS (dmg)
+# on macos-latest, and Linux (AppImage) on ubuntu-latest, then publishes a single GitHub Release
+# with whatever installers came out attached. Windows is the only platform this project has
+# actually been developed/tested on directly — macOS and Linux both build on real hosts for
+# those OSes (unlike this project's own Windows dev machine, which can't cross-build either),
+# but neither has had real-world use yet (see README's "Running on macOS"/"Running on Linux"
+# sections). Both are allowed to fail without blocking the release (`continue-on-error`) so a
+# first-run hiccup on either doesn't hold back a Windows release; the release still goes out
+# with whatever subset of installers actually built, and the workflow's own guard refuses to
+# publish an empty release if somehow nothing built at all.
 on:
   workflow_dispatch:
     inputs:
@@ -76,8 +79,28 @@ jobs:
           path: release/*.dmg
           if-no-files-found: error
 
+  build-linux:
+    needs: validate-version
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Set package.json version
+        run: npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
+      - run: npm run build:linux
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-installer
+          path: release/*.AppImage
+          if-no-files-found: error
+
   release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux]
     if: always() && needs.build-windows.result == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -89,14 +112,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          FILES=$(find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" \))
-          if [ -z "$FILES" ]; then
-            echo "No installers were produced by either build job — refusing to create an empty release."
+          # productName ("Docker Sandbox GUI") has spaces, so every installer filename does too —
+          # NUL-delimited find + a bash array (not a plain string) is required here, confirmed live:
+          # an earlier unquoted-$FILES-string version word-split "Docker Sandbox GUI-0.10.0-arm64.dmg"
+          # into separate broken arguments, which `gh` then tried to glob-match and failed on.
+          mapfile -d '' -t FILES < <(find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" -o -name "*.AppImage" \) -print0)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No installers were produced by any build job — refusing to create an empty release."
             exit 1
           fi
-          gh release create "v${{ inputs.version }}" $FILES \
+          gh release create "v${{ inputs.version }}" "${FILES[@]}" \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "v${{ inputs.version }}" \
-            --notes "Docker Sandbox GUI v${{ inputs.version }}. Unsigned — Windows SmartScreen and macOS Gatekeeper will both flag it on first run (see README)." \
+            --notes "Docker Sandbox GUI v${{ inputs.version }}. Unsigned on every platform — Windows SmartScreen and macOS Gatekeeper will both flag it on first run, and Linux/macOS builds are unverified beyond this pipeline (see README)." \
             $( [ "${{ inputs.prerelease }}" = "true" ] && echo "--prerelease" )
