@@ -1,0 +1,90 @@
+name: Release
+
+# Manually triggered from the Actions tab ("Run workflow") — you type in the version, nothing is
+# auto-computed from commit history. Builds Windows (nsis + msi) on windows-latest and macOS
+# (dmg) on macos-latest — a real Mac, unlike the Windows machine this project has otherwise been
+# built on — then publishes a single GitHub Release with both platforms' installers attached.
+# The macOS build is allowed to fail without blocking the release: this is the first time it's
+# ever been built anywhere (see README's "Running on macOS" section), so a first-run hiccup
+# shouldn't hold back a Windows release. If it succeeds, its .dmg is included; if not, the
+# release still goes out Windows-only and the workflow run's logs show why macOS failed.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, without a "v" prefix (e.g. 0.10.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as a pre-release (beta) on GitHub — recommended until the app has had real-world testing'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Set package.json version
+        run: npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
+      - run: npm run build:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installers
+          path: |
+            release/*.exe
+            release/*.msi
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Set package.json version
+        run: npm version ${{ inputs.version }} --no-git-tag-version --allow-same-version
+      - run: npm run build:mac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: release/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: [build-windows, build-macos]
+    if: always() && needs.build-windows.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILES=$(find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.dmg" \))
+          if [ -z "$FILES" ]; then
+            echo "No installers were produced by either build job — refusing to create an empty release."
+            exit 1
+          fi
+          gh release create "v${{ inputs.version }}" $FILES \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "v${{ inputs.version }}" \
+            --notes "Docker Sandbox GUI v${{ inputs.version }}. Unsigned — Windows SmartScreen and macOS Gatekeeper will both flag it on first run (see README)." \
+            $( [ "${{ inputs.prerelease }}" = "true" ] && echo "--prerelease" )
