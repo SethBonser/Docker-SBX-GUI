@@ -115,6 +115,16 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          # Free-text user input must never be interpolated directly into a `run:` script body —
+          # GitHub substitutes ${{ }} as literal text before bash ever sees the script, so
+          # backticks/quotes/$ in the input become live shell syntax. Confirmed live: notes text
+          # containing `sbx`-style backticks triggered real command substitution attempts
+          # ("sbx: command not found"), and embedded "quotes" prematurely closed the surrounding
+          # bash string, mangling the rest into a broken `gh` argument. Passing through env: and
+          # referencing "$VAR" instead keeps the value as inert data — only the reference is
+          # expanded, never the shell metacharacters inside it. This is the standard fix for this
+          # class of GitHub Actions script-injection bug, not something specific to this input.
+          RELEASE_NOTES: ${{ inputs.notes }}
         run: |
           # productName ("Docker Sandbox GUI") has spaces, so every installer filename does too —
           # NUL-delimited find + a bash array (not a plain string) is required here, confirmed live:
@@ -125,9 +135,20 @@ jobs:
             echo "No installers were produced by any build job — refusing to create an empty release."
             exit 1
           fi
+
+          NOTES="$RELEASE_NOTES"
+          if [ -z "$NOTES" ]; then
+            NOTES="Docker Sandbox GUI v${{ inputs.version }}. Unsigned on every platform — Windows SmartScreen and macOS Gatekeeper will both flag it on first run, and Linux/macOS builds are unverified beyond this pipeline (see README)."
+          fi
+
+          PRERELEASE_FLAGS=()
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            PRERELEASE_FLAGS=(--prerelease)
+          fi
+
           gh release create "v${{ inputs.version }}" "${FILES[@]}" \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "v${{ inputs.version }}" \
-            --notes "${{ inputs.notes != '' && inputs.notes || format('Docker Sandbox GUI v{0}. Unsigned on every platform — Windows SmartScreen and macOS Gatekeeper will both flag it on first run, and Linux/macOS builds are unverified beyond this pipeline (see README).', inputs.version) }}" \
-            $( [ "${{ inputs.prerelease }}" = "true" ] && echo "--prerelease" )
+            --notes "$NOTES" \
+            "${PRERELEASE_FLAGS[@]}"
