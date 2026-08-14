@@ -63,7 +63,7 @@ function ServiceCard({ service, entries }: { service: SecretService; entries: Se
   }
 
   return (
-    <Card className="flex flex-col gap-2">
+    <Card className="flex animate-fade-in flex-col gap-2">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-slate-200">{service}</span>
         {entries.length === 0 && <Badge tone="neutral">not configured</Badge>}

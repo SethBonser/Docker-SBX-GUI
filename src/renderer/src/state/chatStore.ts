@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { create } from 'zustand'
 import type { AgentSessionEvent } from '@shared/types'
 
@@ -181,3 +182,25 @@ export const useChatStore = create<ChatStoreState>((set) => ({
       }
     })
 }))
+
+/**
+ * Mounted once at the app root (Layout) so chat responses get recorded into the transcript
+ * regardless of which page is open — confirmed live (user report): a response generated while
+ * the user had navigated away from that sandbox's Chat tab never appeared when they came back,
+ * even though the agent genuinely produced it (Claude itself referenced "my previous reply").
+ * Root cause: ChatPanel's own onChatEvent subscription — the only thing that was ever calling
+ * handleEvent — only exists while ChatPanel is mounted, i.e. only while that sandbox's detail
+ * page happens to be open. Chat events are already broadcast to every window regardless of what
+ * page is open (see AgentSessionManager.broadcast), same plumbing the activity-notification
+ * listener reuses, so this just needs its own always-on subscription instead of relying on a
+ * component that isn't guaranteed to be mounted. ChatPanel no longer subscribes itself — this
+ * is now the only place handleEvent gets called, avoiding duplicate messages when it is mounted.
+ */
+export function useGlobalChatRecorder(): void {
+  useEffect(() => {
+    const unsubscribe = window.sbxApi.onAnyChatEvent((sandboxName, event) => {
+      useChatStore.getState().handleEvent(sandboxName, event)
+    })
+    return unsubscribe
+  }, [])
+}

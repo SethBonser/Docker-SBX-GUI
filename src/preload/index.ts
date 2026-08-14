@@ -126,6 +126,15 @@ const sbxApi = {
     ipcRenderer.on(IPC.chatEvent, listener)
     return () => ipcRenderer.removeListener(IPC.chatEvent, listener)
   },
+  // Unfiltered variant for the global unread-activity tracker — chat/terminal events are
+  // already broadcast to every window regardless of what's on screen (see AgentSessionManager/
+  // TerminalSessionManager's own broadcast() methods), so this just skips the sandboxName filter
+  // instead of needing a new IPC channel.
+  onAnyChatEvent: (handler: (sandboxName: string, event: AgentSessionEvent) => void): (() => void) => {
+    const listener = (_: unknown, payload: ChatEventPayload): void => handler(payload.sandboxName, payload.event)
+    ipcRenderer.on(IPC.chatEvent, listener)
+    return () => ipcRenderer.removeListener(IPC.chatEvent, listener)
+  },
   login: (): Promise<void> => ipcRenderer.invoke(IPC.sbxLogin),
   logout: (): Promise<void> => ipcRenderer.invoke(IPC.sbxLogout),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke(IPC.shellOpenExternal, url),
@@ -139,6 +148,11 @@ const sbxApi = {
     const listener = (_: unknown, payload: TerminalDataPayload): void => {
       if (payload.sandboxName === sandboxName) handler(payload.data)
     }
+    ipcRenderer.on(IPC.terminalData, listener)
+    return () => ipcRenderer.removeListener(IPC.terminalData, listener)
+  },
+  onAnyTerminalData: (handler: (sandboxName: string, data: string) => void): (() => void) => {
+    const listener = (_: unknown, payload: TerminalDataPayload): void => handler(payload.sandboxName, payload.data)
     ipcRenderer.on(IPC.terminalData, listener)
     return () => ipcRenderer.removeListener(IPC.terminalData, listener)
   },

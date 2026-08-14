@@ -9,7 +9,7 @@ export function PolicyRuleCard({ rule, onRemove }: { rule: PolicyRule; onRemove:
   const remaining = rule.resources.length - preview.length
 
   return (
-    <Card className="flex flex-col gap-1">
+    <Card className="flex animate-fade-in flex-col gap-1">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Badge tone={rule.decision === 'deny' ? 'danger' : 'success'}>{rule.decision}</Badge>

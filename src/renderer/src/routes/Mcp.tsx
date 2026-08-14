@@ -60,7 +60,7 @@ function McpServerRow({
   }
 
   return (
-    <Card className="flex flex-col gap-2">
+    <Card className="flex animate-fade-in flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-slate-200">{server.name}</span>

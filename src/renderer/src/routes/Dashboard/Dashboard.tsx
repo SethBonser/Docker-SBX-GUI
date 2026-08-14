@@ -5,6 +5,7 @@ import { Badge } from '@renderer/components/ui/Badge'
 import { Card } from '@renderer/components/ui/Card'
 import { Button } from '@renderer/components/ui/Button'
 import { useHealth, useSandboxes } from '@renderer/state/queries'
+import { hasUnread, useNotificationStore } from '@renderer/state/notificationStore'
 import {
   useDaemonStart,
   useRemoveSandboxes,
@@ -156,6 +157,7 @@ export function Dashboard(): JSX.Element {
   const navigate = useNavigate()
   const health = useHealth()
   const sandboxes = useSandboxes()
+  const notifications = useNotificationStore()
   const startSandbox = useStartSandbox()
   const stopSandboxes = useStopSandboxes()
   const removeSandboxes = useRemoveSandboxes()
@@ -233,62 +235,73 @@ export function Dashboard(): JSX.Element {
       )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {sandboxes.data?.map((sb) => (
-          <Card
-            key={sb.name}
-            onClick={() => navigate(`/sandboxes/${sb.name}`)}
-            className="flex cursor-pointer flex-col gap-2 transition-colors hover:border-slate-600"
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-medium">{sb.name}</span>
-              <Badge tone={STATUS_TONE[sb.status]}>{sb.status}</Badge>
-            </div>
-            <div className="text-xs text-slate-400">agent: {sb.agent}</div>
-            <div className="truncate text-xs text-slate-500" title={sb.workspace}>
-              {sb.workspace}
-            </div>
-            {sb.ports.length > 0 && (
-              <div className="text-xs text-slate-400">
-                ports: {sb.ports.map((p) => `${p.hostPort}->${p.sandboxPort}/${p.protocol}`).join(', ')}
-              </div>
-            )}
-            <div className="mt-2 flex gap-2">
-              {sb.status === 'running' ? (
-                <Button
-                  variant="secondary"
-                  disabled={pendingAction === sb.name}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void handleStop(sb.name)
-                  }}
-                >
-                  Stop
-                </Button>
-              ) : (
-                <Button
-                  variant="secondary"
-                  disabled={pendingAction === sb.name}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void handleStart(sb.name)
-                  }}
-                >
-                  {pendingAction === sb.name ? 'Starting…' : 'Run'}
-                </Button>
+        {sandboxes.data?.map((sb) => {
+          const unread = hasUnread(notifications, sb.name)
+          return (
+            <Card
+              key={sb.name}
+              onClick={() => navigate(`/sandboxes/${sb.name}`)}
+              className={`relative flex animate-fade-in cursor-pointer flex-col gap-2 hover:border-slate-600 ${
+                unread ? 'border-amber-500/70' : ''
+              }`}
+            >
+              {unread && (
+                <span
+                  title="Unseen Chat/Terminal activity"
+                  className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-amber-400"
+                />
               )}
-              <Button
-                variant="danger"
-                disabled={pendingAction === sb.name}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  void handleRemove(sb.name)
-                }}
-              >
-                Remove
-              </Button>
-            </div>
-          </Card>
-        ))}
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{sb.name}</span>
+                <Badge tone={STATUS_TONE[sb.status]}>{sb.status}</Badge>
+              </div>
+              <div className="text-xs text-slate-400">agent: {sb.agent}</div>
+              <div className="truncate text-xs text-slate-500" title={sb.workspace}>
+                {sb.workspace}
+              </div>
+              {sb.ports.length > 0 && (
+                <div className="text-xs text-slate-400">
+                  ports: {sb.ports.map((p) => `${p.hostPort}->${p.sandboxPort}/${p.protocol}`).join(', ')}
+                </div>
+              )}
+              <div className="mt-2 flex gap-2">
+                {sb.status === 'running' ? (
+                  <Button
+                    variant="secondary"
+                    disabled={pendingAction === sb.name}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleStop(sb.name)
+                    }}
+                  >
+                    Stop
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    disabled={pendingAction === sb.name}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleStart(sb.name)
+                    }}
+                  >
+                    {pendingAction === sb.name ? 'Starting…' : 'Run'}
+                  </Button>
+                )}
+                <Button
+                  variant="danger"
+                  disabled={pendingAction === sb.name}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void handleRemove(sb.name)
+                  }}
+                >
+                  Remove
+                </Button>
+              </div>
+            </Card>
+          )
+        })}
       </div>
 
       {wizardOpen && <CreateSandboxWizard onClose={() => setWizardOpen(false)} />}

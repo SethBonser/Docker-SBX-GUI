@@ -45,18 +45,16 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   // mechanisms (the pty login flow, ClaudePermissionMode) that don't exist for the other agents.
   const isClaude = agent === 'claude'
 
-  // Subscription must always symmetrically subscribe/unsubscribe on every effect run — React
-  // (StrictMode in dev especially) can legitimately run setup -> cleanup -> setup again on the
-  // same mount, and gating this behind a "only once" ref would tear down the listener on the
-  // cleanup pass and then skip resubscribing, leaving the renderer permanently deaf to a chat
-  // session that's actually alive and running in the main process.
+  // Just ensures a session record exists as soon as this panel mounts — actually recording
+  // events into the store happens globally now (see chatStore.useGlobalChatRecorder), not here,
+  // so the transcript keeps updating even while the user has navigated away from this sandbox
+  // entirely (confirmed live: it previously didn't — a response generated while away from this
+  // page never showed up when the user came back, since this per-mount subscription was the
+  // only thing calling handleEvent).
   useEffect(() => {
     if (unsupported) return
     ensureSession(sandboxName)
-    const unsubscribe = window.sbxApi.onChatEvent(sandboxName, (event) => handleEvent(sandboxName, event))
-    return unsubscribe
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sandboxName, agent, unsupported])
+  }, [sandboxName, agent, unsupported, ensureSession])
 
   // Separately, actually start the session exactly once, waiting for the saved default
   // permission mode to load first so it launches with the user's real preference instead of

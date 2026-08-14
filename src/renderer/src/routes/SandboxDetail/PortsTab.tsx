@@ -56,7 +56,7 @@ export function PortsTab({ sandboxName }: { sandboxName: string }): JSX.Element 
         {ports.data?.map((p, i) => {
           const spec = `${p.hostPort}:${p.sandboxPort}/${p.protocol}`
           return (
-            <Card key={`${spec}-${i}`} className="flex items-center justify-between">
+            <Card key={`${spec}-${i}`} className="flex animate-fade-in items-center justify-between">
               <span className="font-mono text-sm text-slate-200">
                 {p.hostIp ?? '127.0.0.1'}:{p.hostPort} → {p.sandboxPort}/{p.protocol}
               </span>

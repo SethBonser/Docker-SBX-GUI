@@ -98,7 +98,7 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
 
       <div className="flex flex-col gap-2">
         {appliedKits.map((k) => (
-          <Card key={k.id} className="flex items-start justify-between gap-3">
+          <Card key={k.id} className="flex animate-fade-in items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-slate-200">

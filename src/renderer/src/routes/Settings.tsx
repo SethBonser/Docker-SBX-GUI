@@ -175,7 +175,7 @@ export function Settings(): JSX.Element {
               {diagnose.data.checks.map((check) => (
                 <div
                   key={check.name}
-                  className="flex flex-col gap-0.5 rounded-md border border-slate-800 px-2 py-1.5 text-xs"
+                  className="flex animate-fade-in flex-col gap-0.5 rounded-md border border-slate-800 px-2 py-1.5 text-xs"
                 >
                   <div className="flex items-center gap-2">
                     <Badge tone={STATUS_TONE[check.status] ?? 'neutral'}>{check.status}</Badge>

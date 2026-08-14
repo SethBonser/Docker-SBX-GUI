@@ -1,7 +1,7 @@
 import * as pty from 'node-pty'
 import { shell } from 'electron'
 import { resolveSbxBinaryPath } from '../sbx/binaryPath'
-import { stripAnsi } from './ansi'
+import { stripAnsi } from '@shared/ansi'
 import type { PtyLoginResult } from '@shared/types'
 
 // Ground-truth flow confirmed live against sbx v0.38.0 / Claude Code 2.1.228 via a real

@@ -10,7 +10,10 @@ export function Card({
   onClick?: () => void
 }): JSX.Element {
   return (
-    <div className={`rounded-lg border border-slate-800 bg-slate-900 p-4 ${className}`} onClick={onClick}>
+    <div
+      className={`rounded-lg border border-slate-800 bg-slate-900 p-4 transition-colors duration-150 ${className}`}
+      onClick={onClick}
+    >
       {children}
     </div>
   )

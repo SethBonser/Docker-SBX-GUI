@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Badge } from '@renderer/components/ui/Badge'
 import { useDefaultView, useSandboxes } from '@renderer/state/queries'
+import { useNotificationStore } from '@renderer/state/notificationStore'
 import { ChatPanel } from './ChatPanel'
 import { TerminalView } from './TerminalView'
 import { PortsTab } from './PortsTab'
@@ -43,6 +44,18 @@ export function SandboxDetail(): JSX.Element {
       appliedDefault.current = true
     }
   }, [requestedTab])
+
+  // Reports "the user is looking at this sandbox+tab" to the global activity listener (see
+  // notificationStore.ts) so it knows not to flag activity here as unread, and clears whichever
+  // tab's unread flag matches what's actually being viewed right now. Resets to "nothing open"
+  // on unmount so leaving this page entirely lets activity on any sandbox flag as unread again.
+  useEffect(() => {
+    if (!name) return
+    useNotificationStore.getState().setActiveView(name, tab)
+    if (tab === 'chat') useNotificationStore.getState().clearChatUnread(name)
+    if (tab === 'terminal') useNotificationStore.getState().clearTerminalUnread(name)
+    return () => useNotificationStore.getState().setActiveView(null, null)
+  }, [name, tab])
 
   if (sandboxes.isLoading) {
     return <p className="text-slate-400">Loading…</p>
@@ -104,9 +117,21 @@ export function SandboxDetail(): JSX.Element {
         <div className={tab === 'terminal' ? 'h-full' : 'hidden'}>
           <TerminalView sandboxName={sandbox.name} active={tab === 'terminal'} />
         </div>
-        {tab === 'ports' && <PortsTab sandboxName={sandbox.name} />}
-        {tab === 'policy' && <PolicyTab sandboxName={sandbox.name} />}
-        {tab === 'kits' && <KitsTab sandboxName={sandbox.name} />}
+        {tab === 'ports' && (
+          <div className="h-full animate-fade-in">
+            <PortsTab sandboxName={sandbox.name} />
+          </div>
+        )}
+        {tab === 'policy' && (
+          <div className="h-full animate-fade-in">
+            <PolicyTab sandboxName={sandbox.name} />
+          </div>
+        )}
+        {tab === 'kits' && (
+          <div className="h-full animate-fade-in">
+            <KitsTab sandboxName={sandbox.name} />
+          </div>
+        )}
       </div>
     </div>
   )

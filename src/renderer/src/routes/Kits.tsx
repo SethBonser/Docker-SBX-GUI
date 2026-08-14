@@ -35,7 +35,7 @@ export function Kits(): JSX.Element {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {kitLibrary.data?.map((k) => (
-          <Card key={k.id} className="flex flex-col gap-2">
+          <Card key={k.id} className="flex animate-fade-in flex-col gap-2">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="truncate font-medium text-slate-200">

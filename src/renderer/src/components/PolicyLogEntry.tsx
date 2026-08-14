@@ -11,7 +11,7 @@ export function PolicyLogEntry({
     .join(' · ')
   return (
     <div
-      className={`rounded-md border px-2 py-1 text-xs ${blocked ? 'border-red-900 text-red-400' : 'border-slate-800 text-slate-400'}`}
+      className={`animate-fade-in rounded-md border px-2 py-1 text-xs transition-colors duration-150 ${blocked ? 'border-red-900 text-red-400' : 'border-slate-800 text-slate-400'}`}
     >
       {summary}
     </div>
