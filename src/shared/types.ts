@@ -266,3 +266,33 @@ export interface KitDetails {
   }
   agentContext?: string
 }
+
+// A kit reference is a local directory path, a local ZIP file path, an OCI registry reference
+// (ghcr.io/org/kit:1.0), or a git URL (git+https://...#dir=...) — confirmed live via
+// `sbx kit inspect/add/validate --help`. The UI already knows which kind was picked (a native
+// file dialog vs. a free-text field), so this is threaded through explicitly rather than
+// re-derived by guessing at the reference string's shape.
+export type KitSourceType = 'local' | 'oci' | 'git'
+
+// `sbx` has no command to list which kits are applied to a sandbox, and no `kit remove` at
+// all (confirmed live via `sbx --help`/`sbx kit --help`) — kits can only ever be added, never
+// queried back or removed, through the CLI. This library is this app's own local record of
+// kits it has successfully applied (at sandbox-create time or via the sandbox detail page's
+// Kits tab) — it is honestly incomplete for kits applied via the CLI directly, the same
+// "local tracking, not live state" posture as `lastAppliedPolicyTier`.
+export interface KitLibraryEntry {
+  id: string
+  // For 'local' kits this is a path inside this app's own storage (a copy made at first use,
+  // so it survives the original source folder being moved/deleted) — always what's actually
+  // passed to `sbx kit add`/`inspect` on reuse. For 'oci'/'git' it's just the reference string,
+  // already portable and re-fetchable from origin, so there's nothing to copy.
+  reference: string
+  sourceType: KitSourceType
+  // Only meaningful for 'local' kits: the original path the user picked, kept for display/
+  // provenance even after the file itself has been copied into app storage under `reference`.
+  originalReference: string
+  manifest: KitDetails
+  firstUsedAt: string
+  lastUsedAt: string
+  appliedTo: string[]
+}

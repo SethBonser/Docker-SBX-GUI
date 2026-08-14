@@ -9,6 +9,7 @@ import { agentSessionManager } from '../agents/AgentSessionManager'
 import { loginClaudeViaPty } from '../agents/claudePtyLogin'
 import { terminalSessionManager } from '../agents/TerminalSessionManager'
 import { listPasswordManagers } from '../passwordManager'
+import { recordKitUsage, listKitLibrary, removeKitLibraryEntry } from '../kitLibrary'
 import {
   getDefaultView,
   setDefaultView,
@@ -20,6 +21,8 @@ import {
 import type {
   ClaudePermissionMode,
   DefaultView,
+  KitDetails,
+  KitSourceType,
   McpAddOptions,
   PasswordManagerId,
   PolicyTier
@@ -116,6 +119,44 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.sbxKitValidate, async (_event, reference: string) => {
     return sbxCli.kitValidate(reference)
+  })
+
+  ipcMain.handle(IPC.sbxKitAdd, async (_event, sandboxName: string, reference: string) => {
+    try {
+      await sbxCli.kitAdd(sandboxName, reference)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.kitLibraryList, async () => {
+    try {
+      return listKitLibrary()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(
+    IPC.kitLibraryRecordUsage,
+    async (
+      _event,
+      opts: { reference: string; sourceType: KitSourceType; manifest: KitDetails; sandboxName: string }
+    ) => {
+      try {
+        await recordKitUsage(opts)
+      } catch (err) {
+        throw toIpcError(err)
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.kitLibraryRemove, async (_event, id: string) => {
+    try {
+      await removeKitLibraryEntry(id)
+    } catch (err) {
+      throw toIpcError(err)
+    }
   })
 
   ipcMain.handle(IPC.sbxPolicyList, async (_event, sandboxName?: string) => {

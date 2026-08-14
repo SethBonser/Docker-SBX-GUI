@@ -9,6 +9,8 @@ import type {
   DiagnoseResult,
   HealthStatus,
   KitDetails,
+  KitLibraryEntry,
+  KitSourceType,
   KitValidationResult,
   McpAddOptions,
   McpAuthStatus,
@@ -53,6 +55,16 @@ const sbxApi = {
   kitInspect: (reference: string): Promise<KitDetails> => ipcRenderer.invoke(IPC.sbxKitInspect, reference),
   kitValidate: (reference: string): Promise<KitValidationResult> =>
     ipcRenderer.invoke(IPC.sbxKitValidate, reference),
+  kitAdd: (sandboxName: string, reference: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxKitAdd, sandboxName, reference),
+  listKitLibrary: (): Promise<KitLibraryEntry[]> => ipcRenderer.invoke(IPC.kitLibraryList),
+  recordKitUsage: (opts: {
+    reference: string
+    sourceType: KitSourceType
+    manifest: KitDetails
+    sandboxName: string
+  }): Promise<void> => ipcRenderer.invoke(IPC.kitLibraryRecordUsage, opts),
+  removeKitLibraryEntry: (id: string): Promise<void> => ipcRenderer.invoke(IPC.kitLibraryRemove, id),
   policyList: (sandboxName?: string): Promise<PolicyRule[]> =>
     ipcRenderer.invoke(IPC.sbxPolicyList, sandboxName),
   policyAllowNetwork: (resources: string, sandboxName?: string): Promise<void> =>

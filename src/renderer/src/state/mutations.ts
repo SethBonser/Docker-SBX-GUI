@@ -3,6 +3,8 @@ import type {
   ClaudePermissionMode,
   CreateSandboxOptions,
   DefaultView,
+  KitDetails,
+  KitSourceType,
   McpAddOptions,
   PasswordManagerId,
   PolicyTier
@@ -65,6 +67,36 @@ export function useKitInspect() {
 export function useKitValidate() {
   return useMutation({
     mutationFn: (reference: string) => window.sbxApi.kitValidate(reference)
+  })
+}
+
+/** Recreates the sandbox's container — see sbxCli.kitAdd for what's confirmed live about this. */
+export function useKitAdd(sandboxName: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (reference: string) => window.sbxApi.kitAdd(sandboxName, reference),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sandboxes'] })
+  })
+}
+
+export function useRecordKitUsage() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (opts: {
+      reference: string
+      sourceType: KitSourceType
+      manifest: KitDetails
+      sandboxName: string
+    }) => window.sbxApi.recordKitUsage(opts),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['kitLibrary'] })
+  })
+}
+
+export function useRemoveKitLibraryEntry() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => window.sbxApi.removeKitLibraryEntry(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['kitLibrary'] })
   })
 }
 

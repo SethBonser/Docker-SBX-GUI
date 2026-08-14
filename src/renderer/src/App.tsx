@@ -8,7 +8,7 @@ import { GlobalPolicy } from '@renderer/routes/GlobalPolicy'
 import { Mcp } from '@renderer/routes/Mcp'
 import { Secrets } from '@renderer/routes/Secrets'
 import { Settings } from '@renderer/routes/Settings'
-import { Placeholder } from '@renderer/routes/Placeholder'
+import { Kits } from '@renderer/routes/Kits'
 
 function App(): JSX.Element {
   return (
@@ -18,7 +18,7 @@ function App(): JSX.Element {
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="sandboxes/:name" element={<SandboxDetail />} />
-            <Route path="kits" element={<Placeholder title="Kits" />} />
+            <Route path="kits" element={<Kits />} />
             <Route path="secrets" element={<Secrets />} />
             <Route path="mcp" element={<Mcp />} />
             <Route path="policy" element={<GlobalPolicy />} />

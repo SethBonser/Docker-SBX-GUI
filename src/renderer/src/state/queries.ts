@@ -3,6 +3,7 @@ import type {
   ClaudePermissionMode,
   DefaultView,
   HealthStatus,
+  KitLibraryEntry,
   McpAuthStatus,
   McpServerSummary,
   PasswordManagerInfo,
@@ -111,5 +112,17 @@ export function usePasswordManagers() {
     queryKey: ['passwordManagers'],
     queryFn: () => window.sbxApi.listPasswordManagers(),
     refetchInterval: 30_000
+  })
+}
+
+/**
+ * This app's own local record of kits it has successfully applied — sbx has no way to list or
+ * remove kits, only add them, so this is honestly incomplete for kits applied via the CLI
+ * directly (same posture as useLastAppliedPolicyTier above).
+ */
+export function useKitLibrary() {
+  return useQuery<KitLibraryEntry[]>({
+    queryKey: ['kitLibrary'],
+    queryFn: () => window.sbxApi.listKitLibrary()
   })
 }

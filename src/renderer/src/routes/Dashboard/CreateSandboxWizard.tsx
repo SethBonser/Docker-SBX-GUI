@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Button } from '@renderer/components/ui/Button'
 import { Badge } from '@renderer/components/ui/Badge'
 import { Card } from '@renderer/components/ui/Card'
-import { useCreateSandbox } from '@renderer/state/mutations'
-import type { AgentType, KitDetails, KitValidationResult } from '@shared/types'
+import { useCreateSandbox, useRecordKitUsage } from '@renderer/state/mutations'
+import type { AgentType, KitDetails, KitSourceType, KitValidationResult } from '@shared/types'
 
 const AGENTS: AgentType[] = [
   'claude',
@@ -27,6 +27,7 @@ interface ExtraWorkspace {
 
 interface KitEntry {
   reference: string
+  sourceType: KitSourceType
   inspecting: boolean
   details?: KitDetails
   validation?: KitValidationResult
@@ -48,6 +49,7 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
   const [denyDraft, setDenyDraft] = useState('')
 
   const createSandbox = useCreateSandbox()
+  const recordKitUsage = useRecordKitUsage()
 
   async function inspectAndValidateKit(reference: string): Promise<void> {
     setKits((prev) => prev.map((k) => (k.reference === reference ? { ...k, inspecting: true } : k)))
@@ -68,15 +70,15 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
     }
   }
 
-  function addKitReference(reference: string): void {
+  function addKitReference(reference: string, sourceType: KitSourceType): void {
     if (!reference || kits.some((k) => k.reference === reference)) return
-    setKits((prev) => [...prev, { reference, inspecting: true }])
+    setKits((prev) => [...prev, { reference, sourceType, inspecting: true }])
     void inspectAndValidateKit(reference)
   }
 
   async function pickKitFolderOrZip(): Promise<void> {
     const picked = await window.sbxApi.pickKitReference()
-    if (picked) addKitReference(picked)
+    if (picked) addKitReference(picked, 'local')
   }
 
   async function pickPrimaryWorkspace(): Promise<void> {
@@ -100,9 +102,10 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
   async function handleCreate(): Promise<void> {
     if (!primaryWorkspace) return
     const workspaces = [primaryWorkspace, ...extraWorkspaces.map((w) => (w.readOnly ? `${w.path}:ro` : w.path))]
+    const trimmedName = name.trim()
     await createSandbox.mutateAsync({
       agent,
-      name: name.trim(),
+      name: trimmedName,
       workspaces,
       memory: memory.trim() || undefined,
       cpus: cpus.trim() ? Number(cpus.trim()) : undefined,
@@ -110,6 +113,18 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
       denyNetwork: denyNetwork.length ? denyNetwork : undefined,
       kits: kits.length ? kits.map((k) => k.reference) : undefined
     })
+    // Best-effort bookkeeping for the Kits library page — a failure here shouldn't undo an
+    // otherwise-successful sandbox creation, so these aren't awaited as part of the create flow.
+    for (const k of kits) {
+      if (k.details && k.validation?.valid !== false) {
+        void recordKitUsage.mutateAsync({
+          reference: k.reference,
+          sourceType: k.sourceType,
+          manifest: k.details,
+          sandboxName: trimmedName
+        })
+      }
+    }
     onClose()
   }
 
@@ -243,7 +258,9 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
                   <Button variant="secondary" onClick={() => void pickKitFolderOrZip()}>
                     Add folder or ZIP…
                   </Button>
-                  <KitReferenceInput onAdd={addKitReference} />
+                  <KitReferenceInput
+                    onAdd={(ref) => addKitReference(ref, ref.startsWith('git+') ? 'git' : 'oci')}
+                  />
                 </div>
 
                 <div className="flex flex-col gap-3">

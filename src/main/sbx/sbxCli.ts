@@ -272,6 +272,19 @@ async function kitInspect(reference: string): Promise<KitDetails> {
   return parseKitInspectJson(stdout)
 }
 
+/**
+ * Confirmed live: `sbx kit add` recreates the sandbox's container to apply the kit (auto-
+ * starting it first if stopped), and kits genuinely stack — adding a second kit appends to the
+ * "augmented kit list" rather than replacing the first. There is no corresponding `kit remove`;
+ * once added, a kit can't be taken back off through `sbx` at all. Confirmed live against a
+ * sandbox this app's own `create()` produces — it already carries the "recreate-aware" label
+ * `kit add` requires, so sandboxes created through this app are never refused for that reason.
+ * Generous timeout matching `create()`'s, since a container recreate can involve image work.
+ */
+async function kitAdd(sandboxName: string, reference: string): Promise<void> {
+  await run(['kit', 'add', sandboxName, reference], { timeoutMs: 5 * 60_000 })
+}
+
 /** Validation failure is an expected outcome the UI needs to show, not an exceptional error. */
 async function kitValidate(reference: string): Promise<KitValidationResult> {
   try {
@@ -471,6 +484,7 @@ export const sbxCli = {
   unpublishPort,
   kitInspect,
   kitValidate,
+  kitAdd,
   policyList,
   policyAllowNetwork,
   policyDenyNetwork,

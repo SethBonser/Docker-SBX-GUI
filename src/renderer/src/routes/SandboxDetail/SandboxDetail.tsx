@@ -6,11 +6,12 @@ import { ChatPanel } from './ChatPanel'
 import { TerminalView } from './TerminalView'
 import { PortsTab } from './PortsTab'
 import { PolicyTab } from './PolicyTab'
+import { KitsTab } from './KitsTab'
 import type { DefaultView } from '@shared/types'
 
-type Tab = DefaultView | 'ports' | 'policy'
+type Tab = DefaultView | 'ports' | 'policy' | 'kits'
 
-const TABS: Tab[] = ['chat', 'terminal', 'ports', 'policy']
+const TABS: Tab[] = ['chat', 'terminal', 'ports', 'policy', 'kits']
 
 export function SandboxDetail(): JSX.Element {
   const { name } = useParams<{ name: string }>()
@@ -92,9 +93,9 @@ export function SandboxDetail(): JSX.Element {
         Chat and Terminal stay mounted the whole time this page is open — switching tabs is a
         CSS visibility toggle, not a mount/unmount, so neither the chat conversation nor the
         terminal's live xterm instance and scroll position are lost when you switch back and
-        forth. Ports/Policy don't hold any live session state (just React Query-backed views),
-        so they're mounted normally — the query cache already keeps their data warm across tab
-        switches without needing the same always-mounted treatment.
+        forth. Ports/Policy/Kits don't hold any live session state (just React Query-backed
+        views), so they're mounted normally — the query cache already keeps their data warm
+        across tab switches without needing the same always-mounted treatment.
       */}
       <div className="min-h-0 flex-1 rounded-lg border border-slate-800 bg-slate-900 p-4">
         <div className={tab === 'chat' ? 'h-full' : 'hidden'}>
@@ -105,6 +106,7 @@ export function SandboxDetail(): JSX.Element {
         </div>
         {tab === 'ports' && <PortsTab sandboxName={sandbox.name} />}
         {tab === 'policy' && <PolicyTab sandboxName={sandbox.name} />}
+        {tab === 'kits' && <KitsTab sandboxName={sandbox.name} />}
       </div>
     </div>
   )
