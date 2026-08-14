@@ -107,6 +107,7 @@ const sbxApi = {
   daemonStop: (): Promise<void> => ipcRenderer.invoke(IPC.sbxDaemonStop),
   daemonRestart: (): Promise<void> => ipcRenderer.invoke(IPC.sbxDaemonRestart),
   diagnose: (): Promise<DiagnoseResult> => ipcRenderer.invoke(IPC.sbxDiagnose),
+  exportLogs: (): Promise<{ success: boolean; path?: string }> => ipcRenderer.invoke(IPC.logsExport),
   pickWorkspaceFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickFolder),
   pickKitReference: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickKitReference),
   startChatSession: (

@@ -7,6 +7,7 @@ import {
   useDaemonStart,
   useDaemonStop,
   useDiagnose,
+  useExportLogs,
   useSetDefaultPermissionMode,
   useSetDefaultView
 } from '@renderer/state/mutations'
@@ -30,6 +31,7 @@ export function Settings(): JSX.Element {
   const daemonStop = useDaemonStop()
   const daemonRestart = useDaemonRestart()
   const diagnose = useDiagnose()
+  const exportLogs = useExportLogs()
 
   const username = health.data?.username ?? null
 
@@ -188,6 +190,31 @@ export function Settings(): JSX.Element {
               ))}
             </div>
           </>
+        )}
+
+        <div className="flex items-center justify-between border-t border-slate-800 pt-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-300">Export application logs</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Bundles the application log, a fresh <code>sbx diagnose</code>, and version info
+              into one file — useful to send along when reporting a bug.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            disabled={exportLogs.isPending}
+            onClick={() => exportLogs.mutate()}
+          >
+            {exportLogs.isPending ? 'Exporting…' : 'Export logs'}
+          </Button>
+        </div>
+        {exportLogs.isError && (
+          <p className="text-sm text-red-400">{(exportLogs.error as Error).message}</p>
+        )}
+        {exportLogs.data && (
+          <p className={`text-xs ${exportLogs.data.success ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {exportLogs.data.success ? `Saved to ${exportLogs.data.path}` : 'Export canceled.'}
+          </p>
         )}
       </Card>
 

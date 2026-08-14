@@ -1,10 +1,12 @@
 import { app, ipcMain, BrowserWindow, shell } from 'electron'
+import log from 'electron-log/main'
 import { IPC } from '@shared/ipc-contract'
 import type { CreateSandboxOptions } from '@shared/types'
 import { sbxCli } from '../sbx/sbxCli'
 import { probeHealth } from '../sbx/health'
 import { SbxCliError } from '../sbx/errors'
 import { pickWorkspaceFolder, pickKitReference } from '../dialogs'
+import { exportLogs } from '../logExport'
 import { agentSessionManager } from '../agents/AgentSessionManager'
 import { loginClaudeViaPty } from '../agents/claudePtyLogin'
 import { terminalSessionManager } from '../agents/TerminalSessionManager'
@@ -28,12 +30,20 @@ import type {
   PolicyTier
 } from '@shared/types'
 
-/** Re-throw plain, serializable errors so renderer catch blocks get useful info back over IPC. */
+/**
+ * Re-throw plain, serializable errors so renderer catch blocks get useful info back over IPC —
+ * and log every one of them, so a failure a tester saw inline in the UI also has a real stack
+ * trace / stderr detail sitting in the exportable log file, not just whatever short message
+ * happened to render on screen.
+ */
 function toIpcError(err: unknown): Error {
   if (err instanceof SbxCliError) {
+    log.error(`[${err.kind}] ${err.message}`, err.stderr ? `\nstderr: ${err.stderr}` : '')
     return new Error(`[${err.kind}] ${err.message}`)
   }
-  return err instanceof Error ? err : new Error(String(err))
+  const error = err instanceof Error ? err : new Error(String(err))
+  log.error(error.message, error.stack)
+  return error
 }
 
 function activeWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow {
@@ -381,6 +391,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.sbxDiagnose, async () => {
     try {
       return await sbxCli.diagnose()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.logsExport, async (event) => {
+    try {
+      return await exportLogs(activeWindow(event))
     } catch (err) {
       throw toIpcError(err)
     }

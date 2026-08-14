@@ -44,6 +44,7 @@ export const IPC = {
   sbxDaemonStop: 'sbx:daemon:stop',
   sbxDaemonRestart: 'sbx:daemon:restart',
   sbxDiagnose: 'sbx:diagnose',
+  logsExport: 'logs:export',
   dialogPickFolder: 'dialog:pickFolder',
   dialogPickKitReference: 'dialog:pickKitReference',
   chatStart: 'chat:start',

@@ -290,3 +290,9 @@ export function useDiagnose() {
     mutationFn: () => window.sbxApi.diagnose()
   })
 }
+
+export function useExportLogs() {
+  return useMutation({
+    mutationFn: () => window.sbxApi.exportLogs()
+  })
+}

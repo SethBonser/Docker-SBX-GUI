@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron'
+import log from 'electron-log/main'
 import { IPC } from '@shared/ipc-contract'
 import type { AgentSessionEvent, ClaudePermissionMode } from '@shared/types'
 import type { AgentSessionAdapter } from './AgentSessionAdapter'
@@ -16,6 +17,13 @@ class AgentSessionManagerImpl {
   private sessions = new Map<string, AgentSessionAdapter>()
 
   private broadcast(sandboxName: string, event: AgentSessionEvent): void {
+    // Agent errors (a CLI's own failure, a protocol hiccup) arrive as async events here, not as
+    // IPC call rejections, so they'd never reach the toIpcError logging hook otherwise — log
+    // them here instead, since these are exactly the kind of thing a tester's bug report would
+    // otherwise only describe from memory.
+    if (event.type === 'error') {
+      log.error(`[chat:${sandboxName}] ${event.message}`)
+    }
     const payload: ChatEventPayload = { sandboxName, event }
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(IPC.chatEvent, payload)
