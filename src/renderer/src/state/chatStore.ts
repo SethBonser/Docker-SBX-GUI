@@ -23,6 +23,16 @@ interface ChatSessionState {
   messages: ChatMessage[]
   status: SessionStatus
   mcpServers: { name: string; status: string }[]
+  // True from the moment a user message is sent until the first sign of actual agent activity
+  // comes back (a real reply, a tool call, an error) — fills what was previously dead air with
+  // no feedback at all. Driven by the event stream itself rather than the sendChatMessage IPC
+  // call's own promise, since that promise resolves at different points per adapter (Claude's
+  // persistent process vs. the one-shot CLIs, whose sendMessage() only resolves once the whole
+  // turn's child process exits) — the event stream is the one thing consistently true across all
+  // of them. Deliberately not tied to any new broadcast event type or notification logic — pure
+  // renderer-local UI state, so it can never itself trigger the unread-activity notification
+  // (that only ever fires on a real assistant_message, unaffected by this).
+  isThinking: boolean
 }
 
 interface ChatStoreState {
@@ -34,7 +44,7 @@ interface ChatStoreState {
 }
 
 function emptySession(): ChatSessionState {
-  return { messages: [], status: 'idle', mcpServers: [] }
+  return { messages: [], status: 'idle', mcpServers: [], isThinking: false }
 }
 
 let idCounter = 0
@@ -72,7 +82,8 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           ...state.sessions,
           [sandboxName]: {
             ...session,
-            messages: [...session.messages, { kind: 'user', id: nextId(), text }]
+            messages: [...session.messages, { kind: 'user', id: nextId(), text }],
+            isThinking: true
           }
         }
       }
@@ -89,7 +100,14 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           if (event.status === 'connecting') status = 'connecting'
           else if (event.status === 'ready') status = 'ready'
           else if (event.status === 'exited') status = 'exited'
-          return { sessions: { ...state.sessions, [sandboxName]: { ...session, status } } }
+          return {
+            sessions: {
+              ...state.sessions,
+              // "exited" means nothing more is coming for this turn either — clear thinking so
+              // the bubble doesn't linger forever if a session ends mid-response.
+              [sandboxName]: { ...session, status, isThinking: event.status === 'exited' ? false : session.isThinking }
+            }
+          }
 
         case 'assistant_message':
           return {
@@ -97,7 +115,8 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               ...state.sessions,
               [sandboxName]: {
                 ...session,
-                messages: [...messages, { kind: 'assistant', id: nextId(), text: event.text }]
+                messages: [...messages, { kind: 'assistant', id: nextId(), text: event.text }],
+                isThinking: false
               }
             }
           }
@@ -111,7 +130,8 @@ export const useChatStore = create<ChatStoreState>((set) => ({
                 messages: [
                   ...messages,
                   { kind: 'tool', id: event.id, name: event.name, input: event.input, resultPending: true }
-                ]
+                ],
+                isThinking: false
               }
             }
           }
@@ -136,7 +156,12 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               resultPending: false
             })
           }
-          return { sessions: { ...state.sessions, [sandboxName]: { ...session, messages: updated } } }
+          return {
+            sessions: {
+              ...state.sessions,
+              [sandboxName]: { ...session, messages: updated, isThinking: false }
+            }
+          }
         }
 
         case 'permission_denied': {
@@ -158,7 +183,12 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               blockedReason: event.reason
             })
           }
-          return { sessions: { ...state.sessions, [sandboxName]: { ...session, messages: updated } } }
+          return {
+            sessions: {
+              ...state.sessions,
+              [sandboxName]: { ...session, messages: updated, isThinking: false }
+            }
+          }
         }
 
         case 'error':
@@ -167,7 +197,8 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               ...state.sessions,
               [sandboxName]: {
                 ...session,
-                messages: [...messages, { kind: 'error', id: nextId(), message: event.message }]
+                messages: [...messages, { kind: 'error', id: nextId(), message: event.message }],
+                isThinking: false
               }
             }
           }

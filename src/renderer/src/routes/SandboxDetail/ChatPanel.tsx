@@ -77,7 +77,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     if (isClaude && last?.kind === 'assistant' && NOT_LOGGED_IN_PATTERN.test(last.text)) {
       setNeedsLogin(true)
     }
-  }, [session?.messages.length])
+  }, [session?.messages.length, session?.isThinking])
 
   if (unsupported) {
     return (
@@ -227,6 +227,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
           {session?.messages.map((m) => (
             <MessageBubble key={m.id} message={m} />
           ))}
+          {session?.isThinking && <ThinkingBubble />}
         </div>
       </div>
 
@@ -269,6 +270,19 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
           Send
         </Button>
       </div>
+    </div>
+  )
+}
+
+// Purely local UI feedback for the dead-air between sending a message and the first sign of
+// real agent activity (see chatStore's isThinking comment) — never itself seen by the
+// notification system, since it's not a broadcast event.
+function ThinkingBubble(): JSX.Element {
+  return (
+    <div className="flex max-w-[85%] animate-fade-in items-center gap-1 rounded-lg bg-slate-800 px-3 py-2.5">
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-500 [animation-delay:-0.3s]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-500 [animation-delay:-0.15s]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-500" />
     </div>
   )
 }

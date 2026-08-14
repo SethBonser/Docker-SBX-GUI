@@ -28,6 +28,15 @@ export function SandboxDetail(): JSX.Element {
   // to the saved default view when nobody asked for a specific tab.
   const appliedDefault = useRef(requestedTab !== null)
 
+  // TerminalView only mounts once the Terminal tab has actually been opened, then stays mounted
+  // (same always-on treatment as Chat) so switching back and forth doesn't lose it. Confirmed
+  // live (user report): mounting it eagerly alongside Chat — just to have it ready — silently
+  // starts a real pty session the instant any tab opens, and that session's own initial connect
+  // output (prompt, motd, the agent TUI's first paint) was the very first terminal chunk this
+  // sandbox had ever seen, so the notification listener's dedup (nothing to compare against yet)
+  // couldn't suppress it — a "Terminal has unseen activity" badge before Terminal was ever opened.
+  const [terminalMounted, setTerminalMounted] = useState(tab === 'terminal')
+
   useEffect(() => {
     if (!appliedDefault.current && defaultView.data) {
       setTab(defaultView.data)
@@ -44,6 +53,10 @@ export function SandboxDetail(): JSX.Element {
       appliedDefault.current = true
     }
   }, [requestedTab])
+
+  useEffect(() => {
+    if (tab === 'terminal') setTerminalMounted(true)
+  }, [tab])
 
   // Reports "the user is looking at this sandbox+tab" to the global activity listener (see
   // notificationStore.ts) so it knows not to flag activity here as unread, and clears whichever
@@ -103,20 +116,23 @@ export function SandboxDetail(): JSX.Element {
       </div>
 
       {/*
-        Chat and Terminal stay mounted the whole time this page is open — switching tabs is a
-        CSS visibility toggle, not a mount/unmount, so neither the chat conversation nor the
-        terminal's live xterm instance and scroll position are lost when you switch back and
-        forth. Ports/Policy/Kits don't hold any live session state (just React Query-backed
-        views), so they're mounted normally — the query cache already keeps their data warm
-        across tab switches without needing the same always-mounted treatment.
+        Chat stays mounted the whole time this page is open, and Terminal does too but only from
+        the first time its tab is actually opened (see terminalMounted above) — switching tabs
+        after that is a CSS visibility toggle, not a mount/unmount, so neither the chat
+        conversation nor the terminal's live xterm instance and scroll position are lost when you
+        switch back and forth. Ports/Policy/Kits don't hold any live session state (just React
+        Query-backed views), so they're mounted normally — the query cache already keeps their
+        data warm across tab switches without needing the same always-mounted treatment.
       */}
       <div className="min-h-0 flex-1 rounded-lg border border-slate-800 bg-slate-900 p-4">
         <div className={tab === 'chat' ? 'h-full' : 'hidden'}>
           <ChatPanel sandboxName={sandbox.name} agent={sandbox.agent} />
         </div>
-        <div className={tab === 'terminal' ? 'h-full' : 'hidden'}>
-          <TerminalView sandboxName={sandbox.name} active={tab === 'terminal'} />
-        </div>
+        {terminalMounted && (
+          <div className={tab === 'terminal' ? 'h-full' : 'hidden'}>
+            <TerminalView sandboxName={sandbox.name} active={tab === 'terminal'} />
+          </div>
+        )}
         {tab === 'ports' && (
           <div className="h-full animate-fade-in">
             <PortsTab sandboxName={sandbox.name} />
