@@ -18,7 +18,10 @@ import {
   getDefaultPermissionMode,
   setDefaultPermissionMode,
   getLastAppliedPolicyTier,
-  setLastAppliedPolicyTier
+  setLastAppliedPolicyTier,
+  getGpuEnabledSandboxes,
+  markSandboxGpuEnabled,
+  clearSandboxGpuEnabled
 } from '../settings'
 import type {
   ClaudePermissionMode,
@@ -57,7 +60,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.sbxLs, async () => {
     try {
-      return await sbxCli.ls()
+      const sandboxes = await sbxCli.ls()
+      const gpuEnabled = getGpuEnabledSandboxes()
+      return sandboxes.map((sb) => ({ ...sb, gpu: gpuEnabled.includes(sb.name) }))
     } catch (err) {
       throw toIpcError(err)
     }
@@ -66,6 +71,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.sbxCreate, async (_event, opts: CreateSandboxOptions) => {
     try {
       await sbxCli.create(opts)
+      if (opts.gpu) markSandboxGpuEnabled(opts.name)
     } catch (err) {
       throw toIpcError(err)
     }
@@ -90,6 +96,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.sbxRm, async (_event, names: string[]) => {
     try {
       await sbxCli.rm(names)
+      for (const name of names) clearSandboxGpuEnabled(name)
     } catch (err) {
       throw toIpcError(err)
     }
@@ -233,6 +240,22 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.settingsGetLastAppliedPolicyTier, () => getLastAppliedPolicyTier())
+
+  ipcMain.handle(IPC.sbxGetGpuFeatureEnabled, async () => {
+    try {
+      return await sbxCli.getGpuFeatureEnabled()
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.sbxSetGpuFeatureEnabled, async (_event, enabled: boolean) => {
+    try {
+      await sbxCli.setGpuFeatureEnabled(enabled)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
 
   ipcMain.handle(IPC.sbxMcpList, async () => {
     try {

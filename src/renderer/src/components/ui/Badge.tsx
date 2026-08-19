@@ -9,13 +9,16 @@ const TONES = {
 
 export function Badge({
   children,
-  tone = 'neutral'
+  tone = 'neutral',
+  title
 }: {
   children: ReactNode
   tone?: keyof typeof TONES
+  title?: string
 }): JSX.Element {
   return (
     <span
+      title={title}
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium transition-colors duration-150 ${TONES[tone]}`}
     >
       {children}

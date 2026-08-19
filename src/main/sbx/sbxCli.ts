@@ -15,6 +15,7 @@ import { resolvePasswordManagerSecret } from '../passwordManager'
 import type {
   CreateSandboxOptions,
   DiagnoseResult,
+  GpuFeatureStatus,
   KitDetails,
   KitValidationResult,
   McpAddOptions,
@@ -231,6 +232,7 @@ async function create(opts: CreateSandboxOptions): Promise<void> {
   for (const d of opts.denyNetwork ?? []) args.push('--deny-network', d)
   for (const k of opts.kits ?? []) args.push('--kit', k)
   if (opts.template) args.push('-t', opts.template)
+  if (opts.gpu) args.push('--gpu')
   args.push(opts.agent, ...opts.workspaces)
 
   await run(args, { timeoutMs: 10 * 60_000 })
@@ -358,6 +360,22 @@ async function policyInit(tier: PolicyTier): Promise<void> {
  */
 async function policyReset(): Promise<void> {
   await run(['policy', 'reset', '-f'], { timeoutMs: 30_000 })
+}
+
+/**
+ * Confirmed live: `sbx settings get feature.sandbox-gpu` prints the full JSON object even
+ * without --json — feature.* flags are their own `json`-typed setting, unlike a plain bool
+ * setting (e.g. clipboard.imagePaste), whose evaluated value really is just "true"/"false".
+ */
+async function getGpuFeatureEnabled(): Promise<boolean> {
+  const { stdout } = await run(['settings', 'get', 'feature.sandbox-gpu'])
+  const status = JSON.parse(stdout.trim()) as GpuFeatureStatus
+  return status.enabled
+}
+
+/** Confirmed live: `settings set` accepts the "true"/"false" shorthand for feature flags. */
+async function setGpuFeatureEnabled(enabled: boolean): Promise<void> {
+  await run(['settings', 'set', 'feature.sandbox-gpu', String(enabled)])
 }
 
 async function mcpList(): Promise<McpServerSummary[]> {
@@ -492,6 +510,8 @@ export const sbxCli = {
   policyLog,
   policyInit,
   policyReset,
+  getGpuFeatureEnabled,
+  setGpuFeatureEnabled,
   mcpList,
   mcpInspect,
   mcpAdd,

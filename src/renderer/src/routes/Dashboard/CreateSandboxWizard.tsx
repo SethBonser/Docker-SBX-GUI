@@ -3,6 +3,7 @@ import { Button } from '@renderer/components/ui/Button'
 import { Badge } from '@renderer/components/ui/Badge'
 import { Card } from '@renderer/components/ui/Card'
 import { useCreateSandbox, useRecordKitUsage } from '@renderer/state/mutations'
+import { useGpuFeatureEnabled } from '@renderer/state/queries'
 import type { AgentType, KitDetails, KitSourceType, KitValidationResult } from '@shared/types'
 
 const AGENTS: AgentType[] = [
@@ -42,6 +43,7 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
   const [name, setName] = useState('')
   const [memory, setMemory] = useState('')
   const [cpus, setCpus] = useState('')
+  const [gpu, setGpu] = useState(false)
   const [kits, setKits] = useState<KitEntry[]>([])
   const [ports, setPorts] = useState<string[]>([])
   const [portDraft, setPortDraft] = useState('')
@@ -50,6 +52,11 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
 
   const createSandbox = useCreateSandbox()
   const recordKitUsage = useRecordKitUsage()
+  const gpuFeatureEnabled = useGpuFeatureEnabled()
+  // Confirmed live via `sbx run --help`/`sbx create --help`: "Linux x86_64, single NVIDIA GPU."
+  // Only offered when both the host itself can support it and the daemon-level feature flag is
+  // on — passing --gpu in any other state is untested territory this app shouldn't guess at.
+  const gpuAvailable = window.sbxApi.platform === 'linux' && gpuFeatureEnabled.data === true
 
   async function inspectAndValidateKit(reference: string): Promise<void> {
     setKits((prev) => prev.map((k) => (k.reference === reference ? { ...k, inspecting: true } : k)))
@@ -111,7 +118,8 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
       cpus: cpus.trim() ? Number(cpus.trim()) : undefined,
       publish: ports.length ? ports : undefined,
       denyNetwork: denyNetwork.length ? denyNetwork : undefined,
-      kits: kits.length ? kits.map((k) => k.reference) : undefined
+      kits: kits.length ? kits.map((k) => k.reference) : undefined,
+      gpu: gpuAvailable && gpu ? true : undefined
     })
     // Best-effort bookkeeping for the Kits library page — a failure here shouldn't undo an
     // otherwise-successful sandbox creation, so these aren't awaited as part of the create flow.
@@ -242,6 +250,43 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
                     placeholder="Default: all host CPUs"
                   />
                 </label>
+
+                {/*
+                  Hidden entirely on non-Linux rather than shown-but-disabled: confirmed live via
+                  sbx's own --help text that this is permanently Linux x86_64-only, not just "off
+                  right now" — there's no toggle or setup step on Windows/macOS that ever makes it
+                  reachable, unlike the "enable the flag in Settings first" case below, which is a
+                  real actionable path on Linux. A disabled control with no way to ever enable it
+                  is just noise.
+                */}
+                {window.sbxApi.platform === 'linux' && (
+                  <div className="flex items-start gap-2 border-t border-slate-800 pt-3">
+                    <input
+                      type="checkbox"
+                      id="gpu-passthrough"
+                      checked={gpu}
+                      disabled={!gpuAvailable}
+                      onChange={(e) => setGpu(e.target.checked)}
+                      className="mt-1"
+                    />
+                    <label htmlFor="gpu-passthrough" className="flex flex-col gap-0.5 text-sm">
+                      <span className="flex items-center gap-2 text-slate-200">
+                        Pass host GPU through to this sandbox
+                        <Badge tone="warning">experimental</Badge>
+                      </span>
+                      {gpuAvailable ? (
+                        <span className="text-xs text-slate-500">
+                          NVIDIA VFIO passthrough, single GPU. Must be set now — this cannot be
+                          added to the sandbox later.
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-500">
+                          Turn this on in Settings first (GPU passthrough is off by default).
+                        </span>
+                      )}
+                    </label>
+                  </div>
+                )}
               </div>
             )}
 
@@ -342,6 +387,11 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
                   {cpus && (
                     <div>
                       <span className="text-slate-500">CPUs:</span> {cpus}
+                    </div>
+                  )}
+                  {gpuAvailable && gpu && (
+                    <div>
+                      <span className="text-slate-500">GPU passthrough:</span> enabled
                     </div>
                   )}
                   {kits.length > 0 && (

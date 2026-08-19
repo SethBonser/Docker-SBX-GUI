@@ -25,6 +25,12 @@ export interface SandboxSummary {
   status: SandboxStatus
   ports: PortMapping[]
   workspace: string
+  // sbx has no way to query GPU-passthrough status after creation (no field on `sbx ls --json`,
+  // no per-sandbox inspect command) — this is this app's own local record of whether --gpu was
+  // passed at creation time through this app, same honest "local tracking, not live state"
+  // posture as lastAppliedPolicyTier. Populated main-process-side by enriching the raw `sbx ls`
+  // result, not something the CLI itself reports.
+  gpu: boolean
 }
 
 export interface HealthStatus {
@@ -45,6 +51,21 @@ export interface CreateSandboxOptions {
   denyNetwork?: string[]
   kits?: string[] // kit references: directory, ZIP path, OCI ref, or git URL
   template?: string
+  // (Experimental) NVIDIA VFIO GPU passthrough — confirmed live via `sbx run --help`/`sbx create
+  // --help`: "Linux x86_64, single NVIDIA GPU; requires one-time privileged host setup." Must be
+  // set at creation time; a no-op on an existing sandbox, with no equivalent recreate-in-place
+  // path (unlike kits' `sbx kit add`).
+  gpu?: boolean
+}
+
+// Mirrors `sbx settings get feature.sandbox-gpu`'s real JSON shape (confirmed live, sbx v0.38.0)
+// — feature.* settings are their own `json`-typed setting, not a plain bool, so the evaluated
+// value is always this shape even without --json. `variant`/`variantPayload` are for gradual
+// rollouts and aren't used here; only `enabled` matters for this app's on/off toggle.
+export interface GpuFeatureStatus {
+  enabled: boolean
+  variant: string
+  variantPayload: string
 }
 
 // Ground-truth shape confirmed against a live `sbx kit inspect --json` (sbx v0.38.0, kit schemaVersion 2).

@@ -253,7 +253,14 @@ export function Dashboard(): JSX.Element {
               )}
               <div className="flex items-center justify-between">
                 <span className="font-medium">{sb.name}</span>
-                <Badge tone={STATUS_TONE[sb.status]}>{sb.status}</Badge>
+                <div className="flex items-center gap-1.5">
+                  {sb.gpu && (
+                    <Badge tone="warning" title="Created with NVIDIA GPU passthrough">
+                      GPU
+                    </Badge>
+                  )}
+                  <Badge tone={STATUS_TONE[sb.status]}>{sb.status}</Badge>
+                </div>
               </div>
               <div className="text-xs text-slate-400">agent: {sb.agent}</div>
               <div className="truncate text-xs text-slate-500" title={sb.workspace}>

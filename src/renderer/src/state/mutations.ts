@@ -153,6 +153,14 @@ export function useInitPolicyTier() {
   })
 }
 
+export function useSetGpuFeatureEnabled() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (enabled: boolean) => window.sbxApi.setGpuFeatureEnabled(enabled),
+    onSuccess: (_data, enabled) => queryClient.setQueryData(['settings', 'gpuFeatureEnabled'], enabled)
+  })
+}
+
 export function useResetPolicy() {
   const queryClient = useQueryClient()
   return useMutation({

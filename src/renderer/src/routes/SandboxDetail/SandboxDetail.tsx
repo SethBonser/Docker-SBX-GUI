@@ -94,6 +94,11 @@ export function SandboxDetail(): JSX.Element {
         <h1 className="text-lg font-semibold">{sandbox.name}</h1>
         <Badge tone="neutral">{sandbox.agent}</Badge>
         <Badge tone={sandbox.status === 'running' ? 'success' : 'neutral'}>{sandbox.status}</Badge>
+        {sandbox.gpu && (
+          <Badge tone="warning" title="Created with NVIDIA GPU passthrough">
+            GPU
+          </Badge>
+        )}
       </div>
 
       <div className="flex gap-1 border-b border-slate-800">

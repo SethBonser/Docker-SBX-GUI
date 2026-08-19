@@ -48,6 +48,9 @@ function toPortMapping(raw: RawPort): PortMapping {
   }
 }
 
+// `gpu` is always false here — confirmed live that `sbx ls --json` carries no such field, so it
+// gets filled in by the IPC handler (registerHandlers.ts) from this app's own local record
+// instead of being parsed from the CLI's own output.
 export function parseLsJson(stdout: string): SandboxSummary[] {
   const parsed = JSON.parse(stdout) as RawLsOutput
   return parsed.sandboxes.map((s) => ({
@@ -55,7 +58,8 @@ export function parseLsJson(stdout: string): SandboxSummary[] {
     agent: s.agent,
     status: toSandboxStatus(s.status),
     ports: (s.ports ?? []).map(toPortMapping),
-    workspace: s.workspaces[0] ?? ''
+    workspace: s.workspaces[0] ?? '',
+    gpu: false
   }))
 }
 

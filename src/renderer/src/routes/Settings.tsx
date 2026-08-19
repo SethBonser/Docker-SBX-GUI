@@ -1,7 +1,7 @@
 import { Badge } from '@renderer/components/ui/Badge'
 import { Button } from '@renderer/components/ui/Button'
 import { Card } from '@renderer/components/ui/Card'
-import { useDefaultPermissionMode, useDefaultView, useHealth } from '@renderer/state/queries'
+import { useDefaultPermissionMode, useDefaultView, useGpuFeatureEnabled, useHealth } from '@renderer/state/queries'
 import {
   useDaemonRestart,
   useDaemonStart,
@@ -9,7 +9,8 @@ import {
   useDiagnose,
   useExportLogs,
   useSetDefaultPermissionMode,
-  useSetDefaultView
+  useSetDefaultView,
+  useSetGpuFeatureEnabled
 } from '@renderer/state/mutations'
 import { PERMISSION_MODE_OPTIONS } from '@renderer/permissionModes'
 import type { ClaudePermissionMode, DefaultView } from '@shared/types'
@@ -32,6 +33,8 @@ export function Settings(): JSX.Element {
   const daemonRestart = useDaemonRestart()
   const diagnose = useDiagnose()
   const exportLogs = useExportLogs()
+  const gpuFeatureEnabled = useGpuFeatureEnabled()
+  const setGpuFeatureEnabled = useSetGpuFeatureEnabled()
 
   const username = health.data?.username ?? null
 
@@ -154,6 +157,45 @@ export function Settings(): JSX.Element {
         </div>
         {daemonError && <p className="text-sm text-red-400">{(daemonError as Error).message}</p>}
       </Card>
+
+      {window.sbxApi.platform === 'linux' && (
+        <Card className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-slate-300">GPU passthrough</h2>
+            <Badge tone="warning">experimental</Badge>
+          </div>
+          <p className="text-xs text-slate-500">
+            Confirmed via <code>sbx</code>'s own CLI help text: NVIDIA VFIO GPU passthrough, Linux
+            x86_64 only, single GPU, and requires one-time privileged host setup. This toggle
+            controls the <code>feature.sandbox-gpu</code> daemon setting — once on, a "Pass GPU
+            through" option becomes available in the Create Sandbox wizard. It has no effect on
+            existing sandboxes; GPU passthrough can only be set when a sandbox is first created.
+          </p>
+          <div className="flex items-center justify-between border-t border-slate-800 pt-3">
+            <span className="text-sm text-slate-300">
+              {gpuFeatureEnabled.isLoading
+                ? 'Loading…'
+                : gpuFeatureEnabled.data
+                  ? 'Enabled'
+                  : 'Disabled'}
+            </span>
+            <Button
+              variant="secondary"
+              disabled={gpuFeatureEnabled.isLoading || setGpuFeatureEnabled.isPending}
+              onClick={() => setGpuFeatureEnabled.mutate(!gpuFeatureEnabled.data)}
+            >
+              {setGpuFeatureEnabled.isPending
+                ? 'Updating…'
+                : gpuFeatureEnabled.data
+                  ? 'Disable'
+                  : 'Enable'}
+            </Button>
+          </div>
+          {setGpuFeatureEnabled.isError && (
+            <p className="text-sm text-red-400">{(setGpuFeatureEnabled.error as Error).message}</p>
+          )}
+        </Card>
+      )}
 
       <Card className="flex flex-col gap-3">
         <div className="flex items-center justify-between">

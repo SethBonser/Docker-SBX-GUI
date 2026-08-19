@@ -27,6 +27,11 @@ import type {
   SecretEntry
 } from '@shared/types'
 
+// Read directly from Node's `process` rather than an IPC round trip — preload runs in a Node
+// context even with contextIsolation on, so this is already a plain, safe, synchronous value.
+// Used to gate GPU passthrough's UI to Linux hosts, since it's confirmed Linux x86_64-only.
+const platform = process.platform
+
 interface ChatEventPayload {
   sandboxName: string
   event: AgentSessionEvent
@@ -39,6 +44,7 @@ interface TerminalDataPayload {
 
 // Narrow, typed surface exposed to the renderer. Never expose raw ipcRenderer.
 const sbxApi = {
+  platform,
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC.appVersion),
   getHealth: (): Promise<HealthStatus> => ipcRenderer.invoke(IPC.sbxHealth),
   listSandboxes: (): Promise<SandboxSummary[]> => ipcRenderer.invoke(IPC.sbxLs),
@@ -77,6 +83,9 @@ const sbxApi = {
     ipcRenderer.invoke(IPC.sbxPolicyLog, sandboxName, limit),
   policyInit: (tier: PolicyTier): Promise<void> => ipcRenderer.invoke(IPC.sbxPolicyInit, tier),
   policyReset: (): Promise<void> => ipcRenderer.invoke(IPC.sbxPolicyReset),
+  getGpuFeatureEnabled: (): Promise<boolean> => ipcRenderer.invoke(IPC.sbxGetGpuFeatureEnabled),
+  setGpuFeatureEnabled: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC.sbxSetGpuFeatureEnabled, enabled),
   getLastAppliedPolicyTier: (): Promise<PolicyTier | null> =>
     ipcRenderer.invoke(IPC.settingsGetLastAppliedPolicyTier),
   mcpList: (): Promise<McpServerSummary[]> => ipcRenderer.invoke(IPC.sbxMcpList),

@@ -26,6 +26,8 @@ export const IPC = {
   sbxPolicyLog: 'sbx:policy:log',
   sbxPolicyInit: 'sbx:policy:init',
   sbxPolicyReset: 'sbx:policy:reset',
+  sbxGetGpuFeatureEnabled: 'sbx:settings:getGpuFeatureEnabled',
+  sbxSetGpuFeatureEnabled: 'sbx:settings:setGpuFeatureEnabled',
   sbxMcpList: 'sbx:mcp:list',
   sbxMcpInspect: 'sbx:mcp:inspect',
   sbxMcpAdd: 'sbx:mcp:add',

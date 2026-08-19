@@ -76,6 +76,20 @@ export function useLastAppliedPolicyTier() {
   })
 }
 
+/**
+ * The global `feature.sandbox-gpu` flag — a real sbx daemon setting, not local app state.
+ * Skipped entirely on non-Linux hosts: GPU passthrough is confirmed Linux x86_64-only (see
+ * README), so there's nothing useful this query could inform on Windows/macOS, and every UI
+ * surface that reads it is itself hidden on those platforms.
+ */
+export function useGpuFeatureEnabled() {
+  return useQuery<boolean>({
+    queryKey: ['settings', 'gpuFeatureEnabled'],
+    queryFn: () => window.sbxApi.getGpuFeatureEnabled(),
+    enabled: window.sbxApi.platform === 'linux'
+  })
+}
+
 export function useMcpServers() {
   return useQuery<McpServerSummary[]>({
     queryKey: ['mcp', 'servers'],

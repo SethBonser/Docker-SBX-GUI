@@ -9,10 +9,20 @@ interface SettingsSchema {
   // is unknown (null) until the user applies one from here — it does not reflect tiers set via
   // the sbx CLI directly or the tier auto-initialized on first sandbox creation.
   lastAppliedPolicyTier: PolicyTier | null
+  // Names of sandboxes created with --gpu through this app. Same posture as lastAppliedPolicyTier
+  // above: sbx has no way to query GPU-passthrough status on an existing sandbox (no field on
+  // `sbx ls --json`, no inspect command), so this is honestly local — a sandbox created with
+  // --gpu via the CLI directly won't show up here.
+  gpuEnabledSandboxes: string[]
 }
 
 const store = new Store<SettingsSchema>({
-  defaults: { defaultView: 'chat', defaultPermissionMode: 'default', lastAppliedPolicyTier: null }
+  defaults: {
+    defaultView: 'chat',
+    defaultPermissionMode: 'default',
+    lastAppliedPolicyTier: null,
+    gpuEnabledSandboxes: []
+  }
 })
 
 export function getDefaultView(): DefaultView {
@@ -37,4 +47,22 @@ export function getLastAppliedPolicyTier(): PolicyTier | null {
 
 export function setLastAppliedPolicyTier(tier: PolicyTier | null): void {
   store.set('lastAppliedPolicyTier', tier)
+}
+
+export function getGpuEnabledSandboxes(): string[] {
+  return store.get('gpuEnabledSandboxes')
+}
+
+export function markSandboxGpuEnabled(name: string): void {
+  const names = store.get('gpuEnabledSandboxes')
+  if (!names.includes(name)) store.set('gpuEnabledSandboxes', [...names, name])
+}
+
+/** Called on removal so a later sandbox reusing the same name doesn't inherit a stale badge. */
+export function clearSandboxGpuEnabled(name: string): void {
+  const names = store.get('gpuEnabledSandboxes')
+  store.set(
+    'gpuEnabledSandboxes',
+    names.filter((n) => n !== name)
+  )
 }
