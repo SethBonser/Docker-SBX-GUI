@@ -39,8 +39,13 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
     }
   }
 
-  async function pickLocalKit(): Promise<void> {
-    const picked = await window.sbxApi.pickKitReference()
+  async function pickLocalKitFolder(): Promise<void> {
+    const picked = await window.sbxApi.pickKitDirectory()
+    if (picked) await inspectDraft(picked, 'local')
+  }
+
+  async function pickLocalKitZip(): Promise<void> {
+    const picked = await window.sbxApi.pickKitZip()
     if (picked) await inspectDraft(picked, 'local')
   }
 
@@ -126,8 +131,11 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
         </p>
 
         <div className="flex gap-2">
-          <Button variant="secondary" disabled={busy} onClick={() => void pickLocalKit()}>
-            Pick local folder/ZIP
+          <Button variant="secondary" disabled={busy} onClick={() => void pickLocalKitFolder()}>
+            Pick local folder
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={() => void pickLocalKitZip()}>
+            Pick local ZIP
           </Button>
           <input
             value={refDraft}

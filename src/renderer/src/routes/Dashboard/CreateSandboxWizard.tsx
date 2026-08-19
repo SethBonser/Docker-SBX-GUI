@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Button } from '@renderer/components/ui/Button'
 import { Badge } from '@renderer/components/ui/Badge'
 import { Card } from '@renderer/components/ui/Card'
-import { useCreateSandbox, useRecordKitUsage } from '@renderer/state/mutations'
-import { useGpuFeatureEnabled } from '@renderer/state/queries'
-import type { AgentType, KitDetails, KitSourceType, KitValidationResult } from '@shared/types'
+import { useCreateSandbox, useRecordKitUsage, useRefreshKitLibraryEntry } from '@renderer/state/mutations'
+import { useGpuFeatureEnabled, useKitLibrary } from '@renderer/state/queries'
+import type { AgentType, KitDetails, KitLibraryEntry, KitSourceType, KitValidationResult } from '@shared/types'
 
 const AGENTS: AgentType[] = [
   'claude',
@@ -33,6 +33,11 @@ interface KitEntry {
   details?: KitDetails
   validation?: KitValidationResult
   error?: string
+  // Set when this kit came from the "Use existing" library picker rather than a fresh pick —
+  // threaded through to recordKitUsage so reusing a library entry updates it in place instead
+  // of being misidentified as a new kit (its `reference` is this app's own stored-copy path,
+  // not the library entry's user-facing originalReference the default dedup logic keys off of).
+  libraryEntryId?: string
 }
 
 export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.Element {
@@ -77,14 +82,19 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
     }
   }
 
-  function addKitReference(reference: string, sourceType: KitSourceType): void {
+  function addKitReference(reference: string, sourceType: KitSourceType, libraryEntryId?: string): void {
     if (!reference || kits.some((k) => k.reference === reference)) return
-    setKits((prev) => [...prev, { reference, sourceType, inspecting: true }])
+    setKits((prev) => [...prev, { reference, sourceType, inspecting: true, libraryEntryId }])
     void inspectAndValidateKit(reference)
   }
 
-  async function pickKitFolderOrZip(): Promise<void> {
-    const picked = await window.sbxApi.pickKitReference()
+  async function pickKitFolder(): Promise<void> {
+    const picked = await window.sbxApi.pickKitDirectory()
+    if (picked) addKitReference(picked, 'local')
+  }
+
+  async function pickKitZip(): Promise<void> {
+    const picked = await window.sbxApi.pickKitZip()
     if (picked) addKitReference(picked, 'local')
   }
 
@@ -129,7 +139,8 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
           reference: k.reference,
           sourceType: k.sourceType,
           manifest: k.details,
-          sandboxName: trimmedName
+          sandboxName: trimmedName,
+          libraryEntryId: k.libraryEntryId
         })
       }
     }
@@ -157,8 +168,8 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
           </ol>
         </aside>
 
-        <div className="flex flex-1 flex-col">
-          <div className="flex-1 overflow-auto p-6">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
             {step === 0 && (
               <div className="flex flex-col gap-2">
                 <h3 className="text-base font-semibold">Choose an agent</h3>
@@ -299,13 +310,25 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
                 <p className="text-sm text-slate-500">
                   Kits extend this sandbox with credentials, network rules, env vars, and setup commands.
                 </p>
-                <div className="flex gap-2">
-                  <Button variant="secondary" onClick={() => void pickKitFolderOrZip()}>
-                    Add folder or ZIP…
-                  </Button>
-                  <KitReferenceInput
-                    onAdd={(ref) => addKitReference(ref, ref.startsWith('git+') ? 'git' : 'oci')}
-                  />
+
+                <ExistingKitPicker
+                  selectedReferences={kits.map((k) => k.reference)}
+                  onSelect={(entry) => addKitReference(entry.reference, entry.sourceType, entry.id)}
+                />
+
+                <div className="flex flex-col gap-2">
+                  <h4 className="text-sm font-medium text-slate-300">Add a new kit</h4>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => void pickKitFolder()}>
+                      Add folder…
+                    </Button>
+                    <Button variant="secondary" onClick={() => void pickKitZip()}>
+                      Add ZIP…
+                    </Button>
+                    <KitReferenceInput
+                      onAdd={(ref) => addKitReference(ref, ref.startsWith('git+') ? 'git' : 'oci')}
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-3">
@@ -441,6 +464,92 @@ export function CreateSandboxWizard({ onClose }: { onClose: () => void }): JSX.E
   )
 }
 
+/**
+ * The whole point of the local kit library (see src/main/kitLibrary.ts) is to make kits you've
+ * already used trivial to reuse — so the Create wizard should offer them directly instead of
+ * making the user re-pick the same folder/ZIP or re-type the same OCI/git reference every time.
+ */
+function ExistingKitPicker({
+  selectedReferences,
+  onSelect
+}: {
+  selectedReferences: string[]
+  onSelect: (entry: KitLibraryEntry) => void
+}): JSX.Element | null {
+  const kitLibrary = useKitLibrary()
+  const refreshEntry = useRefreshKitLibraryEntry()
+  const [refreshingId, setRefreshingId] = useState<string | null>(null)
+
+  if (kitLibrary.isLoading) {
+    return <p className="text-sm text-slate-500">Loading your kit library…</p>
+  }
+  if (!kitLibrary.data || kitLibrary.data.length === 0) {
+    return null
+  }
+
+  // For a local kit, re-sync the stored copy from its original folder/ZIP before reuse — that
+  // copy exists to survive the original being moved/deleted, which also means reuse would
+  // otherwise silently apply whatever content existed the first time this kit was ever added,
+  // not any edits made since (see the note above `refreshLocalKitEntry` in kitLibrary.ts). If
+  // the original is gone or the refresh fails for any reason, fall back to the existing stored
+  // copy rather than blocking the user — same posture as the rest of this app's kit handling.
+  async function handleSelect(entry: KitLibraryEntry): Promise<void> {
+    if (entry.sourceType !== 'local') {
+      onSelect(entry)
+      return
+    }
+    setRefreshingId(entry.id)
+    try {
+      const refreshed = await refreshEntry.mutateAsync(entry.id)
+      onSelect(refreshed)
+    } catch {
+      onSelect(entry)
+    } finally {
+      setRefreshingId(null)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h4 className="text-sm font-medium text-slate-300">Use existing</h4>
+      <p className="text-xs text-slate-500">
+        Kits you've used before, from this app's own history (see the Kits page in the left nav).
+      </p>
+      <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+        {kitLibrary.data.map((entry) => {
+          const added = selectedReferences.includes(entry.reference)
+          const refreshing = refreshingId === entry.id
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              disabled={added || refreshing}
+              onClick={() => void handleSelect(entry)}
+              className={`flex flex-col gap-1 rounded-md border px-3 py-2 text-left text-sm ${
+                added || refreshing
+                  ? 'cursor-default border-slate-800 bg-slate-900/50 opacity-60'
+                  : 'border-slate-800 bg-slate-900 hover:border-slate-600'
+              }`}
+            >
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="min-w-0 truncate font-medium text-slate-200">
+                  {entry.manifest.manifest.displayName ?? entry.manifest.manifest.name}
+                </span>
+                {added && <Badge tone="success">added</Badge>}
+                {refreshing && <Badge tone="neutral">syncing…</Badge>}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <Badge tone="neutral">{entry.sourceType}</Badge>
+                <span>last used {new Date(entry.lastUsedAt).toLocaleDateString()}</span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function KitReferenceInput({ onAdd }: { onAdd: (reference: string) => void }): JSX.Element {
   const [value, setValue] = useState('')
   return (
@@ -468,7 +577,7 @@ function KitReferenceInput({ onAdd }: { onAdd: (reference: string) => void }): J
 
 function KitCard({ entry, onRemove }: { entry: KitEntry; onRemove: () => void }): JSX.Element {
   return (
-    <Card className="flex flex-col gap-2">
+    <Card className="flex min-w-0 flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">
@@ -494,7 +603,7 @@ function KitCard({ entry, onRemove }: { entry: KitEntry; onRemove: () => void })
       )}
 
       {entry.details && (
-        <div className="flex flex-col gap-1 text-xs text-slate-400">
+        <div className="flex min-w-0 flex-col gap-1 break-words text-xs text-slate-400">
           {entry.details.manifest.description && <p>{entry.details.manifest.description}</p>}
           {entry.details.requires?.agent && <p>Requires agent: {entry.details.requires.agent}</p>}
           {entry.details.credentials && entry.details.credentials.length > 0 && (

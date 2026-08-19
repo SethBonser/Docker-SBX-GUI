@@ -5,13 +5,13 @@ import type { CreateSandboxOptions } from '@shared/types'
 import { sbxCli } from '../sbx/sbxCli'
 import { probeHealth } from '../sbx/health'
 import { SbxCliError } from '../sbx/errors'
-import { pickWorkspaceFolder, pickKitReference } from '../dialogs'
+import { pickWorkspaceFolder, pickKitDirectory, pickKitZip } from '../dialogs'
 import { exportLogs } from '../logExport'
 import { agentSessionManager } from '../agents/AgentSessionManager'
 import { loginClaudeViaPty } from '../agents/claudePtyLogin'
 import { terminalSessionManager } from '../agents/TerminalSessionManager'
 import { listPasswordManagers } from '../passwordManager'
-import { recordKitUsage, listKitLibrary, removeKitLibraryEntry } from '../kitLibrary'
+import { recordKitUsage, listKitLibrary, removeKitLibraryEntry, refreshLocalKitEntry } from '../kitLibrary'
 import {
   getDefaultView,
   setDefaultView,
@@ -158,7 +158,13 @@ export function registerIpcHandlers(): void {
     IPC.kitLibraryRecordUsage,
     async (
       _event,
-      opts: { reference: string; sourceType: KitSourceType; manifest: KitDetails; sandboxName: string }
+      opts: {
+        reference: string
+        sourceType: KitSourceType
+        manifest: KitDetails
+        sandboxName: string
+        libraryEntryId?: string
+      }
     ) => {
       try {
         await recordKitUsage(opts)
@@ -171,6 +177,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.kitLibraryRemove, async (_event, id: string) => {
     try {
       await removeKitLibraryEntry(id)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.kitLibraryRefreshEntry, async (_event, id: string) => {
+    try {
+      return await refreshLocalKitEntry(id)
     } catch (err) {
       throw toIpcError(err)
     }
@@ -431,8 +445,12 @@ export function registerIpcHandlers(): void {
     return pickWorkspaceFolder(activeWindow(event))
   })
 
-  ipcMain.handle(IPC.dialogPickKitReference, async (event) => {
-    return pickKitReference(activeWindow(event))
+  ipcMain.handle(IPC.dialogPickKitDirectory, async (event) => {
+    return pickKitDirectory(activeWindow(event))
+  })
+
+  ipcMain.handle(IPC.dialogPickKitZip, async (event) => {
+    return pickKitZip(activeWindow(event))
   })
 
   ipcMain.handle(

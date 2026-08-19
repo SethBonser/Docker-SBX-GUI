@@ -87,8 +87,15 @@ export function useRecordKitUsage() {
       sourceType: KitSourceType
       manifest: KitDetails
       sandboxName: string
+      libraryEntryId?: string
     }) => window.sbxApi.recordKitUsage(opts),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['kitLibrary'] })
+  })
+}
+
+export function useRefreshKitLibraryEntry() {
+  return useMutation({
+    mutationFn: (id: string) => window.sbxApi.refreshKitLibraryEntry(id)
   })
 }
 

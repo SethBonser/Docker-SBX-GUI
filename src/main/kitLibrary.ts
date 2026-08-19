@@ -47,11 +47,31 @@ export async function recordKitUsage(opts: {
   sourceType: KitSourceType
   manifest: KitDetails
   sandboxName: string
+  // Set when the reference being recorded came from picking an existing library entry (see
+  // ExistingKitPicker) rather than a fresh folder/ZIP/OCI/git pick. In that case `opts.reference`
+  // is this app's own internal stored-copy path, not the user-facing original path the
+  // path-based dedup below keys off of — without this, reusing a library entry would fail to
+  // match itself and get recorded as a brand-new duplicate entry every time.
+  libraryEntryId?: string
 }): Promise<void> {
   const entries = store.get('entries')
+  const now = new Date().toISOString()
+
+  if (opts.libraryEntryId) {
+    const byId = entries.find((e) => e.id === opts.libraryEntryId)
+    if (byId) {
+      byId.manifest = opts.manifest
+      byId.lastUsedAt = now
+      if (!byId.appliedTo.includes(opts.sandboxName)) byId.appliedTo.push(opts.sandboxName)
+      store.set('entries', entries)
+      return
+    }
+    // Entry was removed from the library between being offered and being used — fall through
+    // to the path-based dedup below rather than silently dropping the usage record.
+  }
+
   const key = dedupKey(opts.sourceType, opts.reference)
   const existing = entries.find((e) => dedupKey(e.sourceType, e.originalReference) === key)
-  const now = new Date().toISOString()
 
   if (existing) {
     existing.manifest = opts.manifest
@@ -80,6 +100,28 @@ export async function recordKitUsage(opts: {
 
 export function listKitLibrary(): KitLibraryEntry[] {
   return store.get('entries')
+}
+
+/**
+ * Re-syncs a local kit's stored copy from its original source path before reuse. The stored
+ * copy exists specifically so the library survives the original being moved or deleted — but
+ * that means reusing it via "Use existing" was always serving whatever content existed at
+ * first-use time, even if the user has since edited/re-packed the original. If the original
+ * still exists on disk, re-copy it (overwriting the stored copy) so reuse picks up real edits;
+ * if it doesn't (moved/deleted), fall back silently to the existing stored copy, same as today.
+ * No-op for 'oci'/'git' kits, since those references are already portable/re-fetchable.
+ */
+export async function refreshLocalKitEntry(id: string): Promise<KitLibraryEntry> {
+  const entries = store.get('entries')
+  const entry = entries.find((e) => e.id === id)
+  if (!entry) throw new Error(`Kit library entry not found: ${id}`)
+  if (entry.sourceType !== 'local' || !existsSync(entry.originalReference)) return entry
+
+  const dir = join(kitsDir(), id)
+  await rm(dir, { recursive: true, force: true })
+  entry.reference = await copyLocalKitToStorage(entry.originalReference, id)
+  store.set('entries', entries)
+  return entry
 }
 
 export async function removeKitLibraryEntry(id: string): Promise<void> {

@@ -69,8 +69,11 @@ const sbxApi = {
     sourceType: KitSourceType
     manifest: KitDetails
     sandboxName: string
+    libraryEntryId?: string
   }): Promise<void> => ipcRenderer.invoke(IPC.kitLibraryRecordUsage, opts),
   removeKitLibraryEntry: (id: string): Promise<void> => ipcRenderer.invoke(IPC.kitLibraryRemove, id),
+  refreshKitLibraryEntry: (id: string): Promise<KitLibraryEntry> =>
+    ipcRenderer.invoke(IPC.kitLibraryRefreshEntry, id),
   policyList: (sandboxName?: string): Promise<PolicyRule[]> =>
     ipcRenderer.invoke(IPC.sbxPolicyList, sandboxName),
   policyAllowNetwork: (resources: string, sandboxName?: string): Promise<void> =>
@@ -118,7 +121,8 @@ const sbxApi = {
   diagnose: (): Promise<DiagnoseResult> => ipcRenderer.invoke(IPC.sbxDiagnose),
   exportLogs: (): Promise<{ success: boolean; path?: string }> => ipcRenderer.invoke(IPC.logsExport),
   pickWorkspaceFolder: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickFolder),
-  pickKitReference: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickKitReference),
+  pickKitDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickKitDirectory),
+  pickKitZip: (): Promise<string | null> => ipcRenderer.invoke(IPC.dialogPickKitZip),
   startChatSession: (
     sandboxName: string,
     agent: string,
