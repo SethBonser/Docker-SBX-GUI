@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import log from 'electron-log/main'
 import { registerIpcHandlers } from './ipc/registerHandlers'
+import { fixMacPath } from './fixMacPath'
 
 // Bridges renderer-side `electron-log/renderer` calls to this same file automatically (see
 // docs/initialize.md's "most common case" — a bundler + contextIsolation, exactly this app's
@@ -44,7 +45,12 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Must happen before registerIpcHandlers()/createWindow() — every sbx invocation (execFile
+  // and pty-based alike) depends on PATH to find the binary, and on macOS a Finder/Dock-launched
+  // app doesn't have it yet at this point (see fixMacPath.ts).
+  await fixMacPath()
+
   log.info(
     `App ready — version ${app.getVersion()}, Electron ${process.versions.electron}, ${process.platform} ${process.arch}`
   )

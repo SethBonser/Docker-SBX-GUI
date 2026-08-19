@@ -14,7 +14,7 @@ win:
       arch: [x64]
     - target: msi
       arch: [x64]
-  artifactName: ${productName}-${version}-setup.${ext}
+  artifactName: ${productName}-${version}-${os}-setup.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -25,6 +25,7 @@ mac:
     - target: dmg
       arch: [arm64]
   category: public.app-category.developer-tools
+  artifactName: ${productName}-${version}-${os}-${arch}.${ext}
   # NOTE: unsigned/unnotarized — cannot be built or tested from this Windows machine.
   # A macOS teammate will need an Apple Developer identity to sign + notarize before distribution.
 linux:
@@ -32,7 +33,7 @@ linux:
     - target: AppImage
       arch: [x64]
   category: Development
-  artifactName: ${productName}-${version}.${ext}
+  artifactName: ${productName}-${version}-${os}.${ext}
   # NOTE: unsigned and never actually built/run anywhere yet — cannot be tested from this
   # Windows machine. Ships via the GitHub Actions release workflow on a real ubuntu-latest
   # runner; treat it as unverified until someone actually runs the AppImage.
