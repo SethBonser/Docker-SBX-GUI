@@ -183,4 +183,11 @@ export class GeminiStreamAdapter implements AgentSessionAdapter {
       this.child = null
     }
   }
+
+  // One-shot per message already, so "interrupt the current turn" and "stop" are the same
+  // operation here: kill whatever's in-flight. The next sendMessage() still resumes via
+  // `--resume latest`, so nothing extra needs restarting.
+  async interrupt(): Promise<void> {
+    await this.stop()
+  }
 }

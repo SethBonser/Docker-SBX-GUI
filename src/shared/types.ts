@@ -113,6 +113,12 @@ export type AgentSessionEvent =
   | { type: 'permission_denied'; toolUseId: string; toolName: string; reason: string }
   | { type: 'raw_output'; text: string } // generic fallback adapter only
   | { type: 'error'; message: string }
+  // Claude-only, from the headless protocol's own {"type":"result",...} event (confirmed to
+  // exist in the wire protocol, previously ignored) — the real "this turn is fully done"
+  // signal, as opposed to isThinking's "first sign of activity" one. Needed to know when a
+  // turn is still actively running (tool calls in progress, more text still to come) so the
+  // Stop button in Chat can stay visible for the turn's whole duration, not just its opening gap.
+  | { type: 'turn_end' }
   // Confirmed live: the headless `system/init` event's `mcp_servers` array includes both the
   // sbx-mediated "mcp-gateway" AND Claude.ai's own native connectors (Gmail, Drive, etc. — the
   // same set the real `/mcp` picker shows), each with a "connected"/"needs-auth"/etc. status.

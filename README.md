@@ -207,6 +207,30 @@ The features below are each self-contained — expand whichever one you're touch
 </details>
 
 <details>
+<summary><strong>Skill autocomplete in Chat</strong> — a "/" mention picker sourced from the sandbox's own workspace</summary>
+
+Claude Code Skills live as plain subdirectories under `<workspace>/.claude/skills/` on the host — a Claude Code concept, not an `sbx` one, so there's no CLI command to list them. `src/main/skills.ts`'s `listSandboxSkills` reads that directory straight off disk (resolving the sandbox's primary workspace via `sbx ls --json`, the same field `SandboxSummary.workspace` already exposes elsewhere), returning an empty list rather than an error when there's no skills directory at all, which is the common case. The Chat tab's message box (`ChatPanel.tsx`) turns typing `/` into a small autocomplete dropdown filtered by whatever's typed after it (arrow keys to move, Enter/Tab to pick, Escape or clicking away to dismiss) — `findActiveMention` scans backward from the cursor for a `/` that starts a word, so a path typed inline (e.g. `check src/main/foo.ts`) doesn't falsely trigger it. Selecting an entry replaces the typed `/query` with `/<skill-name>` — confirmed live that skills are actually invoked with the literal leading slash (e.g. `/docker-case-followup`), not just the bare directory name.
+
+Deliberately overlaps with the existing `/login`/`/mcp` exact-match aliases (see "The chat panel" above) rather than trying to avoid it: those only ever check the *final trimmed message* at send time, so typing `/mcp` still opens this picker while typing (showing "no matching skills" unless a skill happens to be named that) — sending it unselected hits the existing alias exactly as before, unaffected by the picker having been open.
+
+</details>
+
+<details>
+<summary><strong>Stop/interrupt button in Chat</strong> — Esc's meaning, brought to the headless protocol</summary>
+
+Claude Code's own TUI (and this app's Terminal tab, being a real pty) lets Esc interrupt whatever's currently running. The headless stream-json protocol has no TTY and no keypress concept at all, so there's no literal equivalent — what this adds instead is a **Stop** button (and an Esc keybinding *inside the message box specifically*, not a raw terminal keystroke) that kills whatever's actually running for the current turn, which is the closest real equivalent available over this protocol.
+
+Each `AgentSessionAdapter` got a new `interrupt()` method, distinct from `stop()`:
+- **Claude** (`ClaudeStreamJsonAdapter`): `stop()` (used by Clear chat) ends stdin gracefully, which is fine for an intentional full session end; `interrupt()` instead forcefully kills the child, since the point here is stopping generation *now*. The adapter instance stays registered in `AgentSessionManager` either way — Claude's own `sendMessage()` already restarts a fresh child if it finds none running (`if (!this.child) await this.start()`, already there for unrelated reasons), so no separate restart step was needed on the renderer side at all.
+- **Codex, Gemini, docker-agent**: one-shot-per-message already, so `interrupt()` is just their existing `stop()` under a second name — kill whatever's in-flight, and the next `sendMessage()` spawns fresh exactly as it always does. Each adapter's own resume/thread/session id is untouched, so continuity survives an interrupt.
+
+Knowing *when* to show the Stop button needed a real fix, not just reusing what was already there: the existing `isThinking` flag (chat's "thinking" bubble) only covers the gap between sending a message and the *first* sign of activity — it goes false the moment a tool call or partial text arrives, well before the turn is actually done. A new `turnActive` flag in `chatStore.ts` tracks the true span instead, cleared by a new `turn_end` event fired from Claude's adapter on the headless protocol's own `{"type":"result",...}` event — a real event shape already confirmed to exist in this wire protocol (see "The chat panel" above) but previously ignored entirely (`"result" ... carr[ies] no additional UI-relevant state for v1"`). `turnActive` is also defensively cleared on `exited`/`error`, so it can't get stuck true if a turn ends some way that never emits `turn_end`.
+
+**Not yet live-tested against a real sandbox** — same posture as anything else in this README flagged that way: the mechanism (kill the underlying process, let each adapter's own already-existing self-healing logic handle the next message) is sound on its own terms, but whether `sbx exec`'s own process forwards a kill through to the *contained* process the way a plain local kill would, and how quickly, hasn't been confirmed against a live sandbox yet.
+
+</details>
+
+<details>
 <summary><strong>Codex, Gemini, and docker-agent adapters</strong> — the same structured Chat tab, three more protocols confirmed live</summary>
 
 Via three more `AgentSessionAdapter` implementations under `src/main/agents/` — each protocol confirmed live against a real sandbox before being encoded, the same discipline as the Claude adapter above. The shared shape: unlike Claude's one long-lived stdin-reading process, all three CLIs are one-shot-per-message (a fresh `sbx exec` spawn for every turn, with a CLI-specific flag to resume the prior turn's context), and each needed its own "don't hang waiting for an approval prompt that can never come headlessly" flag, discovered the same way as Claude's `permission-mode` finding:

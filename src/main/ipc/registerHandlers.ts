@@ -12,6 +12,7 @@ import { loginClaudeViaPty } from '../agents/claudePtyLogin'
 import { terminalSessionManager } from '../agents/TerminalSessionManager'
 import { listPasswordManagers } from '../passwordManager'
 import { recordKitUsage, listKitLibrary, removeKitLibraryEntry, refreshLocalKitEntry } from '../kitLibrary'
+import { listSandboxSkills } from '../skills'
 import {
   getDefaultView,
   setDefaultView,
@@ -185,6 +186,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.kitLibraryRefreshEntry, async (_event, id: string) => {
     try {
       return await refreshLocalKitEntry(id)
+    } catch (err) {
+      throw toIpcError(err)
+    }
+  })
+
+  ipcMain.handle(IPC.skillsList, async (_event, sandboxName: string) => {
+    try {
+      return await listSandboxSkills(sandboxName)
     } catch (err) {
       throw toIpcError(err)
     }
@@ -466,6 +475,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(IPC.chatStop, async (_event, sandboxName: string) => {
     await agentSessionManager.stop(sandboxName)
+  })
+
+  ipcMain.handle(IPC.chatInterrupt, async (_event, sandboxName: string) => {
+    await agentSessionManager.interrupt(sandboxName)
   })
 
   ipcMain.handle(IPC.chatLoginClaude, async (_event, sandboxName: string) => {

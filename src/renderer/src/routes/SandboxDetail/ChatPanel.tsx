@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Badge } from '@renderer/components/ui/Badge'
 import { Button } from '@renderer/components/ui/Button'
 import { useChatStore, type ChatMessage, type SessionStatus } from '@renderer/state/chatStore'
-import { useDefaultPermissionMode } from '@renderer/state/queries'
+import { useDefaultPermissionMode, useSkills } from '@renderer/state/queries'
 import { PERMISSION_MODE_OPTIONS } from '@renderer/permissionModes'
 import { Markdown } from './Markdown'
 import type { ClaudePermissionMode } from '@shared/types'
@@ -16,6 +16,24 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 }
 
 const NOT_LOGGED_IN_PATTERN = /not logged in/i
+
+/**
+ * Finds an in-progress "/" mention at the cursor, if any — scans backward through non-
+ * whitespace looking for a "/" that itself sits at the start of a word (start of the message,
+ * or preceded by whitespace), so a path typed inline (e.g. "check src/main/foo.ts") doesn't
+ * trigger it — only a "/" that a path segment couldn't itself precede does.
+ */
+function findActiveMention(text: string, cursor: number): { start: number; query: string } | null {
+  let i = cursor - 1
+  while (i >= 0 && !/\s/.test(text[i])) {
+    if (text[i] === '/') {
+      const startOfWord = i === 0 || /\s/.test(text[i - 1])
+      return startOfWord ? { start: i, query: text.slice(i + 1, cursor) } : null
+    }
+    i--
+  }
+  return null
+}
 
 // Every agent with a confirmed headless/structured protocol (see each adapter for the exact
 // wire format and gotchas — every one of these was verified live, never assumed). Anything
@@ -32,6 +50,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [interrupting, setInterrupting] = useState(false)
   const [needsLogin, setNeedsLogin] = useState(false)
   const [mcpChecked, setMcpChecked] = useState(false)
   const [signingIn, setSigningIn] = useState(false)
@@ -39,6 +58,20 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   const defaultPermissionMode = useDefaultPermissionMode()
   const startedRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // "/" mention autocomplete for skills found under this sandbox's own workspace (see
+  // src/main/skills.ts) — mentionQuery is the text typed after "/" (empty string right after
+  // typing just "/"), null when no mention is in progress. mentionStart is the "/" character's
+  // index in `draft`, needed to know what to replace on selection.
+  const skills = useSkills(sandboxName)
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+  const [mentionStart, setMentionStart] = useState<number | null>(null)
+  const [highlightIndex, setHighlightIndex] = useState(0)
+  const mentionMatches =
+    mentionQuery === null
+      ? []
+      : (skills.data ?? []).filter((s) => s.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 8)
 
   const unsupported = !SUPPORTED_AGENTS.includes(agent)
   // /login, the "Sign in to Claude" banner, and the Permissions picker all drive Claude-specific
@@ -90,6 +123,29 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     )
   }
 
+  // Replaces the in-progress "/query" (from mentionStart through the cursor) with "/" + the
+  // skill name — confirmed live: skills are actually invoked with the literal leading slash
+  // (e.g. "/docker-case-followup"), not just the bare name. Distinct from the exact-match
+  // "/login"/"/mcp" aliases below, which only ever look at the final trimmed message on send —
+  // typing "/mcp" still triggers this picker while typing (showing "no matching skills" unless
+  // one happens to be named that), but sending it unselected still hits those aliases exactly
+  // as before.
+  function selectSkill(name: string): void {
+    if (mentionStart === null) return
+    const cursor = textareaRef.current?.selectionStart ?? draft.length
+    const before = draft.slice(0, mentionStart)
+    const after = draft.slice(cursor)
+    const inserted = `/${name} `
+    setDraft(`${before}${inserted}${after}`)
+    setMentionQuery(null)
+    setMentionStart(null)
+    requestAnimationFrame(() => {
+      const pos = before.length + inserted.length
+      textareaRef.current?.focus()
+      textareaRef.current?.setSelectionRange(pos, pos)
+    })
+  }
+
   async function handleSend(): Promise<void> {
     const text = draft.trim()
     if (!text || sending) return
@@ -124,6 +180,22 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
       handleEvent(sandboxName, { type: 'error', message: (err as Error).message })
     } finally {
       setSending(false)
+    }
+  }
+
+  // Stops the turn currently in flight — the Chat-tab equivalent of Esc in Claude Code's own
+  // TUI (Terminal tab). Unlike Clear chat, this doesn't touch the transcript or ask for
+  // confirmation; whatever's already streamed in stays put, and the session is left ready for
+  // the next message (Claude's adapter restarts its own child on the next send if this killed
+  // it; the one-shot adapters just spawn fresh next time, same as always).
+  async function handleInterrupt(): Promise<void> {
+    setInterrupting(true)
+    try {
+      await window.sbxApi.interruptChatTurn(sandboxName)
+    } catch (err) {
+      handleEvent(sandboxName, { type: 'error', message: (err as Error).message })
+    } finally {
+      setInterrupting(false)
     }
   }
 
@@ -252,23 +324,95 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
         </div>
       )}
 
-      <div className="flex gap-2 border-t border-slate-800 pt-3">
+      <div className="relative flex gap-2 border-t border-slate-800 pt-3">
+        {mentionQuery !== null && (
+          <div className="absolute bottom-full left-0 z-10 mb-1 max-h-48 w-64 overflow-y-auto rounded-md border border-slate-700 bg-slate-900 shadow-lg">
+            {mentionMatches.length > 0 ? (
+              mentionMatches.map((name, i) => (
+                <button
+                  key={name}
+                  type="button"
+                  onMouseDown={(e) => {
+                    // Prevents the textarea from blurring before selectSkill reads its
+                    // (still-current) cursor position from selectionStart.
+                    e.preventDefault()
+                    selectSkill(name)
+                  }}
+                  className={`block w-full truncate px-3 py-1.5 text-left text-sm ${
+                    i === highlightIndex ? 'bg-indigo-950 text-indigo-200' : 'text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {name}
+                </button>
+              ))
+            ) : (
+              <p className="px-3 py-1.5 text-sm text-slate-500">No matching skills</p>
+            )}
+          </div>
+        )}
         <textarea
+          ref={textareaRef}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value
+            setDraft(value)
+            const mention = findActiveMention(value, e.target.selectionStart)
+            setMentionStart(mention?.start ?? null)
+            setMentionQuery(mention?.query ?? null)
+            setHighlightIndex(0)
+          }}
           onKeyDown={(e) => {
+            if (mentionQuery !== null && mentionMatches.length > 0) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setHighlightIndex((i) => (i + 1) % mentionMatches.length)
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setHighlightIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length)
+                return
+              }
+              if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault()
+                selectSkill(mentionMatches[highlightIndex])
+                return
+              }
+            }
+            if (e.key === 'Escape' && mentionQuery !== null) {
+              e.preventDefault()
+              setMentionQuery(null)
+              setMentionStart(null)
+              return
+            }
+            // Matches Esc's meaning in Claude Code's own TUI (and this app's Terminal tab) —
+            // interrupt whatever's running, but only when there's actually a turn in flight and
+            // no mention dropdown is claiming the key first.
+            if (e.key === 'Escape' && session?.turnActive) {
+              e.preventDefault()
+              void handleInterrupt()
+              return
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               void handleSend()
             }
           }}
           rows={2}
-          placeholder={`Message ${agent}…`}
+          placeholder={
+            skills.data && skills.data.length > 0 ? `Message ${agent}… (/ to mention a skill)` : `Message ${agent}…`
+          }
           className="flex-1 resize-none rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-100"
         />
-        <Button disabled={sending || !draft.trim()} onClick={() => void handleSend()}>
-          Send
-        </Button>
+        {session?.turnActive ? (
+          <Button variant="secondary" disabled={interrupting} onClick={() => void handleInterrupt()} title="Esc">
+            {interrupting ? 'Stopping…' : 'Stop'}
+          </Button>
+        ) : (
+          <Button disabled={sending || !draft.trim()} onClick={() => void handleSend()}>
+            Send
+          </Button>
+        )}
       </div>
     </div>
   )

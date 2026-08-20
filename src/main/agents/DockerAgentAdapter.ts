@@ -178,4 +178,11 @@ export class DockerAgentAdapter implements AgentSessionAdapter {
       this.child = null
     }
   }
+
+  // One-shot per message already, so "interrupt the current turn" and "stop" are the same
+  // operation here: kill whatever's in-flight. `--session <id>` is untouched, so the next
+  // sendMessage() still resumes the same session — nothing extra to restart.
+  async interrupt(): Promise<void> {
+    await this.stop()
+  }
 }

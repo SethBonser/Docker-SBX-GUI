@@ -212,7 +212,12 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
       return
     }
 
-    // "result" (turn complete) and other system subtypes carry no additional UI-relevant state for v1.
+    if (evt.type === 'result') {
+      this.emit({ type: 'turn_end' })
+      return
+    }
+
+    // Other system subtypes carry no additional UI-relevant state for v1.
   }
 
   async sendMessage(text: string): Promise<void> {
@@ -228,5 +233,19 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
     if (!this.child) return
     this.child.stdin.end()
     this.child = null
+  }
+
+  // Unlike stop()'s graceful stdin-end (fine for an intentional session end, e.g. Clear chat),
+  // this forcefully kills the process — the point is stopping generation immediately, not
+  // waiting for it to notice EOF whenever it next reads stdin. Doesn't touch `this.child` or
+  // emit anything itself; the existing 'exit' handler (registered in start()) already does
+  // both once the kill actually takes effect, so there's exactly one place that happens.
+  async interrupt(): Promise<void> {
+    if (!this.child) return
+    try {
+      this.child.kill()
+    } catch {
+      // already exited
+    }
   }
 }

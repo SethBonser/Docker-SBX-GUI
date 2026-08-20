@@ -72,6 +72,16 @@ class AgentSessionManagerImpl {
     this.sessions.delete(sandboxName)
   }
 
+  // Unlike stop(), deliberately does NOT remove the adapter from `sessions` — interrupting a
+  // turn should leave the session (and, for Codex/Gemini/docker-agent, its resume/thread/session
+  // id) intact for the next message, not end it. Each adapter's own interrupt() already knows
+  // how to leave itself in a state where the next sendMessage() just works.
+  async interrupt(sandboxName: string): Promise<void> {
+    const adapter = this.sessions.get(sandboxName)
+    if (!adapter) return
+    await adapter.interrupt()
+  }
+
   isRunning(sandboxName: string): boolean {
     return this.sessions.get(sandboxName)?.isRunning() ?? false
   }

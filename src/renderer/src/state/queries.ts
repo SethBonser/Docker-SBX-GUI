@@ -53,6 +53,15 @@ export function usePorts(sandboxName: string) {
   })
 }
 
+/** Skill names found under this sandbox's workspace's `.claude/skills/` — empty if there's none. */
+export function useSkills(sandboxName: string) {
+  return useQuery<string[]>({
+    queryKey: ['skills', sandboxName],
+    queryFn: () => window.sbxApi.listSkills(sandboxName),
+    staleTime: 30_000
+  })
+}
+
 /** Omit sandboxName (or pass undefined) for the unscoped, global rule set. */
 export function usePolicyRules(sandboxName?: string) {
   return useQuery<PolicyRule[]>({

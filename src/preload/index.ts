@@ -74,6 +74,7 @@ const sbxApi = {
   removeKitLibraryEntry: (id: string): Promise<void> => ipcRenderer.invoke(IPC.kitLibraryRemove, id),
   refreshKitLibraryEntry: (id: string): Promise<KitLibraryEntry> =>
     ipcRenderer.invoke(IPC.kitLibraryRefreshEntry, id),
+  listSkills: (sandboxName: string): Promise<string[]> => ipcRenderer.invoke(IPC.skillsList, sandboxName),
   policyList: (sandboxName?: string): Promise<PolicyRule[]> =>
     ipcRenderer.invoke(IPC.sbxPolicyList, sandboxName),
   policyAllowNetwork: (resources: string, sandboxName?: string): Promise<void> =>
@@ -131,6 +132,8 @@ const sbxApi = {
   sendChatMessage: (sandboxName: string, text: string): Promise<void> =>
     ipcRenderer.invoke(IPC.chatSendMessage, sandboxName, text),
   stopChatSession: (sandboxName: string): Promise<void> => ipcRenderer.invoke(IPC.chatStop, sandboxName),
+  interruptChatTurn: (sandboxName: string): Promise<void> =>
+    ipcRenderer.invoke(IPC.chatInterrupt, sandboxName),
   loginClaude: (sandboxName: string): Promise<PtyLoginResult> =>
     ipcRenderer.invoke(IPC.chatLoginClaude, sandboxName),
   onChatEvent: (sandboxName: string, handler: (event: AgentSessionEvent) => void): (() => void) => {

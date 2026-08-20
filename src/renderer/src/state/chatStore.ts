@@ -33,6 +33,13 @@ interface ChatSessionState {
   // renderer-local UI state, so it can never itself trigger the unread-activity notification
   // (that only ever fires on a real assistant_message, unaffected by this).
   isThinking: boolean
+  // True from the moment a user message is sent until the turn is genuinely done — unlike
+  // isThinking (which clears the moment *anything* comes back), this stays true through tool
+  // calls and intermediate text so a Stop/interrupt control can stay visible for the turn's
+  // whole duration. Driven by the same real events as isThinking, plus 'turn_end' (Claude's
+  // headless "result" event) — cleared defensively on 'exited'/'error' too, so it can't get
+  // stuck true if a turn ends in some way that never emits 'turn_end'.
+  turnActive: boolean
 }
 
 interface ChatStoreState {
@@ -44,7 +51,7 @@ interface ChatStoreState {
 }
 
 function emptySession(): ChatSessionState {
-  return { messages: [], status: 'idle', mcpServers: [], isThinking: false }
+  return { messages: [], status: 'idle', mcpServers: [], isThinking: false, turnActive: false }
 }
 
 let idCounter = 0
@@ -83,7 +90,8 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           [sandboxName]: {
             ...session,
             messages: [...session.messages, { kind: 'user', id: nextId(), text }],
-            isThinking: true
+            isThinking: true,
+            turnActive: true
           }
         }
       }
@@ -103,9 +111,15 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           return {
             sessions: {
               ...state.sessions,
-              // "exited" means nothing more is coming for this turn either — clear thinking so
-              // the bubble doesn't linger forever if a session ends mid-response.
-              [sandboxName]: { ...session, status, isThinking: event.status === 'exited' ? false : session.isThinking }
+              // "exited" means nothing more is coming for this turn either — clear thinking (and
+              // turnActive, so an interrupted/crashed session doesn't leave Stop stuck visible)
+              // so the bubble doesn't linger forever if a session ends mid-response.
+              [sandboxName]: {
+                ...session,
+                status,
+                isThinking: event.status === 'exited' ? false : session.isThinking,
+                turnActive: event.status === 'exited' ? false : session.turnActive
+              }
             }
           }
 
@@ -198,8 +212,17 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               [sandboxName]: {
                 ...session,
                 messages: [...messages, { kind: 'error', id: nextId(), message: event.message }],
-                isThinking: false
+                isThinking: false,
+                turnActive: false
               }
+            }
+          }
+
+        case 'turn_end':
+          return {
+            sessions: {
+              ...state.sessions,
+              [sandboxName]: { ...session, isThinking: false, turnActive: false }
             }
           }
 
