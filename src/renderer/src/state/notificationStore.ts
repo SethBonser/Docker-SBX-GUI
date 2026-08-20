@@ -35,7 +35,7 @@ interface ActiveView {
   tab: string | null
 }
 
-interface NotificationState extends ActiveView {
+export interface NotificationState extends ActiveView {
   chatUnread: Record<string, boolean>
   terminalUnread: Record<string, boolean>
   setActiveView: (sandboxName: string | null, tab: string | null) => void

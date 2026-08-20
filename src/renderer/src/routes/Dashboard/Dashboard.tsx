@@ -5,7 +5,7 @@ import { Badge } from '@renderer/components/ui/Badge'
 import { Card } from '@renderer/components/ui/Card'
 import { Button } from '@renderer/components/ui/Button'
 import { useHealth, useSandboxes } from '@renderer/state/queries'
-import { hasUnread, useNotificationStore } from '@renderer/state/notificationStore'
+import { hasUnread, useNotificationStore, type NotificationState } from '@renderer/state/notificationStore'
 import {
   useDaemonStart,
   useRemoveSandboxes,
@@ -13,12 +13,40 @@ import {
   useStopSandboxes
 } from '@renderer/state/mutations'
 import { CreateSandboxWizard } from './CreateSandboxWizard'
-import type { SandboxStatus } from '@shared/types'
+import type { SandboxStatus, SandboxSummary } from '@shared/types'
 
 const STATUS_TONE: Record<SandboxStatus, 'success' | 'neutral' | 'warning'> = {
   running: 'success',
   stopped: 'neutral',
   unknown: 'warning'
+}
+
+// Experimental — trying out a few different ways of presenting the sandbox list to see which
+// one people actually prefer, rather than committing to one. Deliberately a plain localStorage
+// preference rather than a real persisted setting (like defaultView): this is meant to be easy
+// to add to/change/remove entirely once feedback comes in, not something worth an IPC round trip
+// and a main-process schema entry yet.
+const DASHBOARD_LAYOUTS = ['grid', 'list', 'compact'] as const
+type DashboardLayoutMode = (typeof DASHBOARD_LAYOUTS)[number]
+const LAYOUT_STORAGE_KEY = 'dashboardLayout'
+const LAYOUT_LABELS: Record<DashboardLayoutMode, string> = {
+  grid: 'Grid',
+  list: 'List',
+  compact: 'Compact'
+}
+
+function loadLayoutPreference(): DashboardLayoutMode {
+  const stored = localStorage.getItem(LAYOUT_STORAGE_KEY)
+  return (DASHBOARD_LAYOUTS as readonly string[]).includes(stored ?? '')
+    ? (stored as DashboardLayoutMode)
+    : 'grid'
+}
+
+interface SandboxCardActions {
+  pendingAction: string | null
+  onStart: (name: string) => void
+  onStop: (name: string) => void
+  onRemove: (name: string) => void
 }
 
 const INSTALL_COMMAND = 'winget install -h Docker.sbx'
@@ -153,8 +181,280 @@ function FirstRunPolicyNudge(): JSX.Element {
   )
 }
 
-export function Dashboard(): JSX.Element {
+/** The original card grid — unchanged behavior, just extracted so it's one of several options. */
+function SandboxGrid({
+  sandboxes,
+  notifications,
+  actions
+}: {
+  sandboxes: SandboxSummary[]
+  notifications: NotificationState
+  actions: SandboxCardActions
+}): JSX.Element {
   const navigate = useNavigate()
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {sandboxes.map((sb) => {
+        const unread = hasUnread(notifications, sb.name)
+        const busy = actions.pendingAction === sb.name
+        return (
+          <Card
+            key={sb.name}
+            onClick={() => navigate(`/sandboxes/${sb.name}`)}
+            className={`relative flex animate-fade-in cursor-pointer flex-col gap-2 hover:border-slate-600 ${
+              unread ? 'border-amber-500/70' : ''
+            }`}
+          >
+            {unread && (
+              <span
+                title="Unseen Chat/Terminal activity"
+                className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-amber-400"
+              />
+            )}
+            <div className="flex items-center justify-between">
+              <span className="font-medium">{sb.name}</span>
+              <div className="flex items-center gap-1.5">
+                {sb.gpu && (
+                  <Badge tone="warning" title="Created with NVIDIA GPU passthrough">
+                    GPU
+                  </Badge>
+                )}
+                <Badge tone={STATUS_TONE[sb.status]}>{sb.status}</Badge>
+              </div>
+            </div>
+            <div className="text-xs text-slate-400">agent: {sb.agent}</div>
+            <div className="truncate text-xs text-slate-500" title={sb.workspace}>
+              {sb.workspace}
+            </div>
+            {sb.ports.length > 0 && (
+              <div className="text-xs text-slate-400">
+                ports: {sb.ports.map((p) => `${p.hostPort}->${p.sandboxPort}/${p.protocol}`).join(', ')}
+              </div>
+            )}
+            <div className="mt-2 flex gap-2">
+              {sb.status === 'running' ? (
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    actions.onStop(sb.name)
+                  }}
+                >
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    actions.onStart(sb.name)
+                  }}
+                >
+                  {busy ? 'Starting…' : 'Run'}
+                </Button>
+              )}
+              <Button
+                variant="danger"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  actions.onRemove(sb.name)
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
+/** A dense, table-like row per sandbox — trades card visuals for scanning many at once. */
+function SandboxList({
+  sandboxes,
+  notifications,
+  actions
+}: {
+  sandboxes: SandboxSummary[]
+  notifications: NotificationState
+  actions: SandboxCardActions
+}): JSX.Element {
+  const navigate = useNavigate()
+  return (
+    <div className="flex flex-col gap-1.5">
+      {sandboxes.map((sb) => {
+        const unread = hasUnread(notifications, sb.name)
+        const busy = actions.pendingAction === sb.name
+        return (
+          <div
+            key={sb.name}
+            onClick={() => navigate(`/sandboxes/${sb.name}`)}
+            className={`flex animate-fade-in cursor-pointer items-center gap-3 rounded-md border border-slate-800 bg-slate-900 px-3 py-2 transition-colors duration-150 hover:border-slate-600 ${
+              unread ? 'border-amber-500/70' : ''
+            }`}
+          >
+            <span
+              title={unread ? 'Unseen Chat/Terminal activity' : undefined}
+              className={`h-2 w-2 flex-shrink-0 rounded-full ${unread ? 'animate-pulse bg-amber-400' : 'bg-transparent'}`}
+            />
+            <span className="w-40 flex-shrink-0 truncate font-medium">{sb.name}</span>
+            <Badge tone={STATUS_TONE[sb.status]}>{sb.status}</Badge>
+            {sb.gpu && (
+              <Badge tone="warning" title="Created with NVIDIA GPU passthrough">
+                GPU
+              </Badge>
+            )}
+            <span className="w-20 flex-shrink-0 text-xs text-slate-400">{sb.agent}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-500" title={sb.workspace}>
+              {sb.workspace}
+            </span>
+            {sb.ports.length > 0 && (
+              <span className="hidden flex-shrink-0 text-xs text-slate-400 md:block">
+                {sb.ports.map((p) => `${p.hostPort}->${p.sandboxPort}/${p.protocol}`).join(', ')}
+              </span>
+            )}
+            <div className="flex flex-shrink-0 gap-2">
+              {sb.status === 'running' ? (
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    actions.onStop(sb.name)
+                  }}
+                >
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    actions.onStart(sb.name)
+                  }}
+                >
+                  {busy ? 'Starting…' : 'Run'}
+                </Button>
+              )}
+              <Button
+                variant="danger"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  actions.onRemove(sb.name)
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Small tiles, more per row, name/status/agent only — an at-a-glance overview for many sandboxes. */
+function SandboxCompactGrid({
+  sandboxes,
+  notifications,
+  actions
+}: {
+  sandboxes: SandboxSummary[]
+  notifications: NotificationState
+  actions: SandboxCardActions
+}): JSX.Element {
+  const navigate = useNavigate()
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      {sandboxes.map((sb) => {
+        const unread = hasUnread(notifications, sb.name)
+        const busy = actions.pendingAction === sb.name
+        return (
+          <Card
+            key={sb.name}
+            onClick={() => navigate(`/sandboxes/${sb.name}`)}
+            className={`relative flex animate-fade-in cursor-pointer flex-col gap-1 p-3 hover:border-slate-600 ${
+              unread ? 'border-amber-500/70' : ''
+            }`}
+          >
+            {unread && (
+              <span
+                title="Unseen Chat/Terminal activity"
+                className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-amber-400"
+              />
+            )}
+            <span className="truncate text-sm font-medium">{sb.name}</span>
+            <div className="flex items-center gap-1.5">
+              <Badge tone={STATUS_TONE[sb.status]}>{sb.status}</Badge>
+              {sb.gpu && (
+                <Badge tone="warning" title="Created with NVIDIA GPU passthrough">
+                  GPU
+                </Badge>
+              )}
+            </div>
+            <span className="truncate text-xs text-slate-500">{sb.agent}</span>
+            <div className="mt-1 flex gap-1.5">
+              {sb.status === 'running' ? (
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    actions.onStop(sb.name)
+                  }}
+                >
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    actions.onStart(sb.name)
+                  }}
+                >
+                  {busy ? '…' : 'Run'}
+                </Button>
+              )}
+              <Button
+                variant="danger"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  actions.onRemove(sb.name)
+                }}
+              >
+                Remove
+              </Button>
+            </div>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
+const LAYOUT_COMPONENTS: Record<
+  DashboardLayoutMode,
+  (props: {
+    sandboxes: SandboxSummary[]
+    notifications: NotificationState
+    actions: SandboxCardActions
+  }) => JSX.Element
+> = {
+  grid: SandboxGrid,
+  list: SandboxList,
+  compact: SandboxCompactGrid
+}
+
+export function Dashboard(): JSX.Element {
   const health = useHealth()
   const sandboxes = useSandboxes()
   const notifications = useNotificationStore()
@@ -163,6 +463,13 @@ export function Dashboard(): JSX.Element {
   const removeSandboxes = useRemoveSandboxes()
   const [wizardOpen, setWizardOpen] = useState(false)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const [layout, setLayout] = useState<DashboardLayoutMode>(loadLayoutPreference)
+  const LayoutComponent = LAYOUT_COMPONENTS[layout]
+
+  function handleLayoutChange(next: DashboardLayoutMode): void {
+    setLayout(next)
+    localStorage.setItem(LAYOUT_STORAGE_KEY, next)
+  }
 
   async function handleStart(name: string): Promise<void> {
     setPendingAction(name)
@@ -214,6 +521,25 @@ export function Dashboard(): JSX.Element {
         <h1 className="text-lg font-semibold">Sandboxes</h1>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-500">sbx {health.data?.version ?? '?'}</span>
+          {sandboxes.data && sandboxes.data.length > 0 && (
+            <label
+              className="flex items-center gap-1.5 text-xs text-slate-500"
+              title="Experimental — trying out a few ways of presenting sandboxes to see what people prefer."
+            >
+              Layout
+              <select
+                value={layout}
+                onChange={(e) => handleLayoutChange(e.target.value as DashboardLayoutMode)}
+                className="rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+              >
+                {DASHBOARD_LAYOUTS.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {LAYOUT_LABELS[mode]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <Button onClick={() => setWizardOpen(true)}>New sandbox</Button>
         </div>
       </div>
@@ -234,82 +560,18 @@ export function Dashboard(): JSX.Element {
         </>
       )}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {sandboxes.data?.map((sb) => {
-          const unread = hasUnread(notifications, sb.name)
-          return (
-            <Card
-              key={sb.name}
-              onClick={() => navigate(`/sandboxes/${sb.name}`)}
-              className={`relative flex animate-fade-in cursor-pointer flex-col gap-2 hover:border-slate-600 ${
-                unread ? 'border-amber-500/70' : ''
-              }`}
-            >
-              {unread && (
-                <span
-                  title="Unseen Chat/Terminal activity"
-                  className="absolute -right-1 -top-1 h-3 w-3 animate-pulse rounded-full bg-amber-400"
-                />
-              )}
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{sb.name}</span>
-                <div className="flex items-center gap-1.5">
-                  {sb.gpu && (
-                    <Badge tone="warning" title="Created with NVIDIA GPU passthrough">
-                      GPU
-                    </Badge>
-                  )}
-                  <Badge tone={STATUS_TONE[sb.status]}>{sb.status}</Badge>
-                </div>
-              </div>
-              <div className="text-xs text-slate-400">agent: {sb.agent}</div>
-              <div className="truncate text-xs text-slate-500" title={sb.workspace}>
-                {sb.workspace}
-              </div>
-              {sb.ports.length > 0 && (
-                <div className="text-xs text-slate-400">
-                  ports: {sb.ports.map((p) => `${p.hostPort}->${p.sandboxPort}/${p.protocol}`).join(', ')}
-                </div>
-              )}
-              <div className="mt-2 flex gap-2">
-                {sb.status === 'running' ? (
-                  <Button
-                    variant="secondary"
-                    disabled={pendingAction === sb.name}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void handleStop(sb.name)
-                    }}
-                  >
-                    Stop
-                  </Button>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    disabled={pendingAction === sb.name}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void handleStart(sb.name)
-                    }}
-                  >
-                    {pendingAction === sb.name ? 'Starting…' : 'Run'}
-                  </Button>
-                )}
-                <Button
-                  variant="danger"
-                  disabled={pendingAction === sb.name}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void handleRemove(sb.name)
-                  }}
-                >
-                  Remove
-                </Button>
-              </div>
-            </Card>
-          )
-        })}
-      </div>
+      {sandboxes.data && sandboxes.data.length > 0 && (
+        <LayoutComponent
+          sandboxes={sandboxes.data}
+          notifications={notifications}
+          actions={{
+            pendingAction,
+            onStart: (name) => void handleStart(name),
+            onStop: (name) => void handleStop(name),
+            onRemove: (name) => void handleRemove(name)
+          }}
+        />
+      )}
 
       {wizardOpen && <CreateSandboxWizard onClose={() => setWizardOpen(false)} />}
     </div>

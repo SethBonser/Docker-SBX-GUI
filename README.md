@@ -353,6 +353,15 @@ A bouncing-dots bubble in the Chat tab shown from the moment a message is sent u
 
 </details>
 
+<details>
+<summary><strong>Dashboard layout picker</strong> — experimental, several layouts to gather real opinions on</summary>
+
+A small **Layout** dropdown next to "New sandbox" switches the sandbox list between three presentations (`Dashboard.tsx`): **Grid** (the original card layout, unchanged), **List** (dense, table-like rows — one line per sandbox, good for scanning many at once), and **Compact** (small tiles, more per row, name/status/agent only). All three share the same `SandboxCardActions` (Start/Stop/Remove) and the same unread-activity indicator, so switching layouts never changes what you can actually do, just how much space it takes.
+
+Deliberately a plain `localStorage` preference (`dashboardLayout`), not a real persisted setting the way `defaultView` is (electron-store + IPC + a Settings entry) — this is explicitly meant to be quick to add to, tweak, or delete entirely once there's real feedback on which one people actually prefer, not something worth building out full main-process plumbing for yet. Renderer-only, so it's per-machine, not synced anywhere — expected for something this provisional.
+
+</details>
+
 **How each feature was scoped:** the CLI's actual behavior was verified against a live `sbx` install throughout — real JSON output shapes, real error text, real flag requirements (e.g. `sbx rm` and `sbx logout` need `-f`/`-y` or they hang forever waiting for a TTY confirmation prompt that will never come) — rather than working from documentation assumptions alone.
 
 <details>
@@ -391,6 +400,7 @@ For an agent picking this project back up: the app is built incrementally, each 
 - **Structured chat adapter for remaining agent types** (e.g. Copilot, others as `sbx` adds them) — Claude, Codex, Gemini, and docker-agent are done (see above). The Terminal tab already gives any agent type a working *interactive* session today (it's agent-agnostic), so this is specifically about parsing a not-yet-covered agent's own headless/structured output mode (if one exists) into the same chat-bubble UI. Lower urgency now that Terminal covers the "can I use it at all" gap for every agent type regardless.
 - **Real-world macOS testing** — now confirmed to actually run on a real Mac, with two real bugs found and fixed (see [Running on macOS](#running-on-macos) above) — but still hasn't had anywhere near Windows' level of exercise. Linux is confirmed to build successfully in CI (see below) but has never actually been run by anyone yet. Flagged loudly with `[!CAUTION]` callouts in the [Running on macOS](#running-on-macos)/[Running on Linux](#running-on-linux) sections rather than buried in this list.
 - **UI polish, remaining scope** — no transitions yet on Chat/Terminal tab switches or on live state changes within them (chat messages arriving, live status text) — deliberately left alone to avoid touching the Chat/Terminal tabs' fragile always-mounted visibility handling (see the `ChatPanel.tsx` gotcha above). Everything else (see below) got a real pass.
+- **App self-update (an in-UI update checker, ideally full auto-update)** — right now, getting a new version means noticing a new GitHub Release exists and manually downloading/reinstalling. `electron-updater` is already a pinned dependency (see `package.json`) but not wired up anywhere yet — the release workflow already produces real per-platform installers on every release (see [Building an installer](#building-an-installer) above), which is the input an updater needs, so this is mostly integration work rather than starting from zero. Scope still to work out: which provider (GitHub Releases directly vs. a generic feed), whether to auto-download or just notify-and-let-the-user-trigger, and how that interacts with this app being unsigned on every platform (an unsigned auto-update path is a meaningfully different trust story than an unsigned manual download the user explicitly chose to run).
 
 <details>
 <summary><strong>Already resolved</strong> (was previously listed here as deferred) — click to expand</summary>
@@ -415,4 +425,4 @@ For an agent picking this project back up: the app is built incrementally, each 
 - **Kit authoring** (`sbx kit pack`/`push`) — the app only *uses* kits (inspect/validate/add), doesn't build them.
 - `sbx skills` UI, `sbx cp` (file transfer) UI.
 - **macOS code signing and notarization** — needs an Apple Developer identity and an actual Mac; the `.dmg` build is otherwise ready to go (see above).
-- **Auto-update.**
+- **Updating `sbx` itself from this app.** Wanted, but deliberately held back for now: this app has no way yet to know whether a newer `sbx` release is actually compatible with the sandboxes, kits, and CLI flags/output shapes it already depends on (see the "confirmed live against a real install" discipline running through this whole README) — shipping an in-app updater for `sbx` before there's a way to verify a new version won't break existing behavior would risk silently regressing everyone who clicks it. Revisit once there's a real compatibility story (e.g. a known-good version range, or a way to check before applying) — not before.
