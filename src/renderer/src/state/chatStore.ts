@@ -23,22 +23,19 @@ interface ChatSessionState {
   messages: ChatMessage[]
   status: SessionStatus
   mcpServers: { name: string; status: string }[]
-  // True from the moment a user message is sent until the first sign of actual agent activity
-  // comes back (a real reply, a tool call, an error) — fills what was previously dead air with
-  // no feedback at all. Driven by the event stream itself rather than the sendChatMessage IPC
-  // call's own promise, since that promise resolves at different points per adapter (Claude's
-  // persistent process vs. the one-shot CLIs, whose sendMessage() only resolves once the whole
-  // turn's child process exits) — the event stream is the one thing consistently true across all
-  // of them. Deliberately not tied to any new broadcast event type or notification logic — pure
-  // renderer-local UI state, so it can never itself trigger the unread-activity notification
-  // (that only ever fires on a real assistant_message, unaffected by this).
-  isThinking: boolean
-  // True from the moment a user message is sent until the turn is genuinely done — unlike
-  // isThinking (which clears the moment *anything* comes back), this stays true through tool
-  // calls and intermediate text so a Stop/interrupt control can stay visible for the turn's
-  // whole duration. Driven by the same real events as isThinking, plus 'turn_end' (Claude's
-  // headless "result" event) — cleared defensively on 'exited'/'error' too, so it can't get
-  // stuck true if a turn ends in some way that never emits 'turn_end'.
+  // True from the moment a user message is sent until the turn is genuinely done — drives both
+  // the Stop/interrupt control's visibility and the "thinking" bubble shown in the transcript.
+  // Confirmed live (user report): an earlier version of this bubble was tied to a flag that
+  // cleared the moment *anything* came back (a tool call starting, say), which reads as "done"
+  // the instant a skill prints its first bit of bash output even though more is clearly still
+  // coming — misleading, not just imprecise. turnActive instead stays true through tool calls
+  // and intermediate text, clearing only on genuine completion: Claude's adapter fires a real
+  // 'turn_end' event (sourced from the headless protocol's own "result" event); the one-shot
+  // Codex/Gemini/docker-agent adapters don't emit an equivalent completion event on success at
+  // all (see each adapter's own comment), so ChatPanel's `endTurn` closes it out locally once
+  // their `sendChatMessage` call resolves — the one signal that IS consistently true for those
+  // three. Also cleared defensively on 'exited'/'error', so it can't get stuck true if a turn
+  // ends some other way.
   turnActive: boolean
 }
 
@@ -48,10 +45,11 @@ interface ChatStoreState {
   addUserMessage: (sandboxName: string, text: string) => void
   ensureSession: (sandboxName: string) => void
   clearSession: (sandboxName: string) => void
+  endTurn: (sandboxName: string) => void
 }
 
 function emptySession(): ChatSessionState {
-  return { messages: [], status: 'idle', mcpServers: [], isThinking: false, turnActive: false }
+  return { messages: [], status: 'idle', mcpServers: [], turnActive: false }
 }
 
 let idCounter = 0
@@ -90,11 +88,21 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           [sandboxName]: {
             ...session,
             messages: [...session.messages, { kind: 'user', id: nextId(), text }],
-            isThinking: true,
             turnActive: true
           }
         }
       }
+    }),
+
+  // Renderer-local turn-completion signal for the one-shot adapters (Codex/Gemini/docker-agent),
+  // which don't emit any event of their own for a successful turn end — see the turnActive
+  // comment above. Only ChatPanel calls this, and only for non-Claude agents; Claude's real
+  // completion always comes from the 'turn_end' event below instead.
+  endTurn: (sandboxName) =>
+    set((state) => {
+      const session = state.sessions[sandboxName]
+      if (!session) return state
+      return { sessions: { ...state.sessions, [sandboxName]: { ...session, turnActive: false } } }
     }),
 
   handleEvent: (sandboxName, event) =>
@@ -111,13 +119,12 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           return {
             sessions: {
               ...state.sessions,
-              // "exited" means nothing more is coming for this turn either — clear thinking (and
-              // turnActive, so an interrupted/crashed session doesn't leave Stop stuck visible)
-              // so the bubble doesn't linger forever if a session ends mid-response.
+              // "exited" means nothing more is coming for this turn either — clear turnActive so
+              // an interrupted/crashed session doesn't leave Stop or the thinking bubble stuck
+              // visible if a session ends mid-response.
               [sandboxName]: {
                 ...session,
                 status,
-                isThinking: event.status === 'exited' ? false : session.isThinking,
                 turnActive: event.status === 'exited' ? false : session.turnActive
               }
             }
@@ -129,8 +136,7 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               ...state.sessions,
               [sandboxName]: {
                 ...session,
-                messages: [...messages, { kind: 'assistant', id: nextId(), text: event.text }],
-                isThinking: false
+                messages: [...messages, { kind: 'assistant', id: nextId(), text: event.text }]
               }
             }
           }
@@ -144,8 +150,7 @@ export const useChatStore = create<ChatStoreState>((set) => ({
                 messages: [
                   ...messages,
                   { kind: 'tool', id: event.id, name: event.name, input: event.input, resultPending: true }
-                ],
-                isThinking: false
+                ]
               }
             }
           }
@@ -173,7 +178,7 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           return {
             sessions: {
               ...state.sessions,
-              [sandboxName]: { ...session, messages: updated, isThinking: false }
+              [sandboxName]: { ...session, messages: updated }
             }
           }
         }
@@ -200,7 +205,7 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           return {
             sessions: {
               ...state.sessions,
-              [sandboxName]: { ...session, messages: updated, isThinking: false }
+              [sandboxName]: { ...session, messages: updated }
             }
           }
         }
@@ -212,7 +217,6 @@ export const useChatStore = create<ChatStoreState>((set) => ({
               [sandboxName]: {
                 ...session,
                 messages: [...messages, { kind: 'error', id: nextId(), message: event.message }],
-                isThinking: false,
                 turnActive: false
               }
             }
@@ -222,7 +226,7 @@ export const useChatStore = create<ChatStoreState>((set) => ({
           return {
             sessions: {
               ...state.sessions,
-              [sandboxName]: { ...session, isThinking: false, turnActive: false }
+              [sandboxName]: { ...session, turnActive: false }
             }
           }
 

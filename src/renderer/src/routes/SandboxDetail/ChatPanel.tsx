@@ -46,6 +46,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   const handleEvent = useChatStore((s) => s.handleEvent)
   const addUserMessage = useChatStore((s) => s.addUserMessage)
   const clearSession = useChatStore((s) => s.clearSession)
+  const endTurn = useChatStore((s) => s.endTurn)
   const session = useChatStore((s) => s.sessions[sandboxName])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -110,7 +111,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     if (isClaude && last?.kind === 'assistant' && NOT_LOGGED_IN_PATTERN.test(last.text)) {
       setNeedsLogin(true)
     }
-  }, [session?.messages.length, session?.isThinking])
+  }, [session?.messages.length, session?.turnActive])
 
   if (unsupported) {
     return (
@@ -176,6 +177,12 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     setSending(true)
     try {
       await window.sbxApi.sendChatMessage(sandboxName, text)
+      // Claude's real turn-completion signal is its own 'turn_end' event; the one-shot
+      // Codex/Gemini/docker-agent adapters don't emit an equivalent on success at all, so this
+      // IPC call resolving (which for them only happens once their whole-turn child process
+      // exits) is the actual completion signal for those three — see chatStore's turnActive
+      // comment for the full reasoning.
+      if (!isClaude) endTurn(sandboxName)
     } catch (err) {
       handleEvent(sandboxName, { type: 'error', message: (err as Error).message })
     } finally {
@@ -299,7 +306,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
           {session?.messages.map((m) => (
             <MessageBubble key={m.id} message={m} />
           ))}
-          {session?.isThinking && <ThinkingBubble />}
+          {session?.turnActive && <ThinkingBubble />}
         </div>
       </div>
 
@@ -418,8 +425,10 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   )
 }
 
-// Purely local UI feedback for the dead-air between sending a message and the first sign of
-// real agent activity (see chatStore's isThinking comment) — never itself seen by the
+// Shown for the entire span chatStore's turnActive covers — from sending a message until the
+// turn is genuinely done, not just until the first bit of output arrives (see the turnActive
+// comment for why that distinction matters: a skill printing early progress output used to make
+// this disappear while the agent was still visibly working). Never itself seen by the
 // notification system, since it's not a broadcast event.
 function ThinkingBubble(): JSX.Element {
   return (
