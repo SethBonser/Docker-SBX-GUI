@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@renderer/components/ui/Badge'
@@ -455,6 +455,7 @@ const LAYOUT_COMPONENTS: Record<
 }
 
 export function Dashboard(): JSX.Element {
+  const queryClient = useQueryClient()
   const health = useHealth()
   const sandboxes = useSandboxes()
   const notifications = useNotificationStore()
@@ -470,6 +471,21 @@ export function Dashboard(): JSX.Element {
     setLayout(next)
     localStorage.setItem(LAYOUT_STORAGE_KEY, next)
   }
+
+  // Confirmed live: `sbx ls` failing with a daemon-connectivity error (a message starting with
+  // "[DaemonDown]" — see errors.ts's classifyFailure) fell through to the raw error card below
+  // instead of the same "sandboxd isn't running" UI a plain daemon-down health check already
+  // gets. Root cause: `health` and `sandboxes` are independent queries with independent polling,
+  // so `health.data.daemonUp` can still say "true" from its last check even after the daemon has
+  // actually gone down by the time `sbx ls` runs. Rather than duplicate the DaemonDownCard gate
+  // here, this just forces a fresh health check when that specific error shape shows up — once
+  // `health.data.daemonUp` catches up to reality, the existing gate below takes over normally.
+  useEffect(() => {
+    const message = (sandboxes.error as Error | null)?.message
+    if (message?.startsWith('[DaemonDown]')) {
+      void queryClient.invalidateQueries({ queryKey: ['health'] })
+    }
+  }, [sandboxes.error, queryClient])
 
   async function handleStart(name: string): Promise<void> {
     setPendingAction(name)

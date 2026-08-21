@@ -229,10 +229,36 @@ export class ClaudeStreamJsonAdapter implements AgentSessionAdapter {
     this.child!.stdin.write(line)
   }
 
+  // Confirmed live: this used to resolve the instant `stdin.end()` was called, without waiting
+  // for the process to actually exit — and the caller (ChatPanel's Clear chat) immediately
+  // spawns a *replacement* `sbx exec` for the same sandbox right after. If the sandbox/daemon
+  // only allows one active exec session per sandbox at a time (plausible — this is a "for real,
+  // reattach interactively" style exec, not a fire-and-forget one), the new spawn would sit
+  // blocked until the old CLI process actually noticed EOF and exited, which isn't instant and
+  // isn't bounded — reported live as "up to a minute" of Chat being unresponsive after Clear
+  // chat. Now waits for the real 'exit' event before resolving, with a timeout that force-kills
+  // the process if it hasn't exited on its own — bounds the worst case instead of leaving it
+  // open-ended, while still preferring the graceful stdin-EOF path when the process is quick
+  // about it (the common case, going by how fast Chat becomes responsive again most of the time).
   async stop(): Promise<void> {
-    if (!this.child) return
-    this.child.stdin.end()
+    const child = this.child
     this.child = null
+    if (!child || child.exitCode !== null) return
+
+    await new Promise<void>((resolve) => {
+      const forceKill = setTimeout(() => {
+        try {
+          child.kill()
+        } catch {
+          // already exited
+        }
+      }, 5_000)
+      child.once('exit', () => {
+        clearTimeout(forceKill)
+        resolve()
+      })
+      child.stdin.end()
+    })
   }
 
   // Unlike stop()'s graceful stdin-end (fine for an intentional session end, e.g. Clear chat),

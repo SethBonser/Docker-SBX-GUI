@@ -173,15 +173,28 @@ export class GeminiStreamAdapter implements AgentSessionAdapter {
     // "init" (session bookkeeping) and a successful "result" carry no additional UI-relevant state.
   }
 
+  // Waits for the kill to actually take effect before resolving (bounded by a timeout) rather
+  // than assuming it's instant — a caller that immediately spawns a replacement session for the
+  // same sandbox (Clear chat) could otherwise race a still-alive process from this one. See the
+  // matching comment on ClaudeStreamJsonAdapter.stop() for the full reasoning (found there
+  // first, from a live report of Chat hanging for up to a minute after Clear chat).
   async stop(): Promise<void> {
-    if (this.child) {
+    const child = this.child
+    this.child = null
+    if (!child || child.exitCode !== null) return
+
+    await new Promise<void>((resolve) => {
+      const giveUp = setTimeout(resolve, 5_000)
+      child.once('exit', () => {
+        clearTimeout(giveUp)
+        resolve()
+      })
       try {
-        this.child.kill()
+        child.kill()
       } catch {
         // already exited
       }
-      this.child = null
-    }
+    })
   }
 
   // One-shot per message already, so "interrupt the current turn" and "stop" are the same

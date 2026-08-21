@@ -105,13 +105,20 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     })
   }, [sandboxName, agent, unsupported, defaultPermissionMode.data])
 
+  // Confirmed live: auto-scroll didn't always reach bottom, most noticeably right as a tool's
+  // result filled in. Root cause was this effect depending on `messages.length` — a new tool
+  // result (or a permission denial) updates an *existing* message bubble in place via
+  // chatStore's `.map()` rather than appending one, so the array grows taller on screen without
+  // its length changing, and the effect never re-ran to follow it. `chatStore` always produces a
+  // fresh array reference on every mutation (append or in-place update alike), so depending on
+  // the array itself instead of its length catches both cases.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
     const last = session?.messages[session.messages.length - 1]
     if (isClaude && last?.kind === 'assistant' && NOT_LOGGED_IN_PATTERN.test(last.text)) {
       setNeedsLogin(true)
     }
-  }, [session?.messages.length, session?.turnActive])
+  }, [session?.messages, session?.turnActive])
 
   if (unsupported) {
     return (
