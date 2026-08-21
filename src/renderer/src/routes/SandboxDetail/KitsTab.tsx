@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { Badge } from '@renderer/components/ui/Badge'
 import { Button } from '@renderer/components/ui/Button'
 import { Card } from '@renderer/components/ui/Card'
+import { ExistingKitPicker } from '@renderer/components/ExistingKitPicker'
 import { useKitLibrary } from '@renderer/state/queries'
 import { useKitAdd, useRecordKitUsage } from '@renderer/state/mutations'
-import type { KitDetails, KitSourceType, KitValidationResult } from '@shared/types'
+import type { KitDetails, KitLibraryEntry, KitSourceType, KitValidationResult } from '@shared/types'
 
 interface DraftKit {
   reference: string
@@ -13,6 +14,10 @@ interface DraftKit {
   details?: KitDetails
   validation?: KitValidationResult
   error?: string
+  // Set when this draft came from the "Use existing" picker rather than a fresh pick — see the
+  // matching note in CreateSandboxWizard.tsx's KitEntry: threaded through to recordKitUsage so
+  // reusing a library entry updates it in place instead of being misidentified as a new kit.
+  libraryEntryId?: string
 }
 
 export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
@@ -26,17 +31,25 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
   const appliedKits = (kitLibrary.data ?? []).filter((k) => k.appliedTo.includes(sandboxName))
   const busy = draft?.inspecting || kitAdd.isPending || recordKitUsage.isPending
 
-  async function inspectDraft(reference: string, sourceType: KitSourceType): Promise<void> {
-    setDraft({ reference, sourceType, inspecting: true })
+  async function inspectDraft(
+    reference: string,
+    sourceType: KitSourceType,
+    libraryEntryId?: string
+  ): Promise<void> {
+    setDraft({ reference, sourceType, inspecting: true, libraryEntryId })
     try {
       const [details, validation] = await Promise.all([
         window.sbxApi.kitInspect(reference),
         window.sbxApi.kitValidate(reference)
       ])
-      setDraft({ reference, sourceType, inspecting: false, details, validation })
+      setDraft({ reference, sourceType, inspecting: false, details, validation, libraryEntryId })
     } catch (err) {
-      setDraft({ reference, sourceType, inspecting: false, error: (err as Error).message })
+      setDraft({ reference, sourceType, inspecting: false, error: (err as Error).message, libraryEntryId })
     }
+  }
+
+  async function pickExistingKit(entry: KitLibraryEntry): Promise<void> {
+    await inspectDraft(entry.reference, entry.sourceType, entry.id)
   }
 
   async function pickLocalKitFolder(): Promise<void> {
@@ -55,8 +68,17 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
     await inspectDraft(reference, reference.startsWith('git+') ? 'git' : 'oci')
   }
 
+  // Confirmed live: `sbx kit add`'s recreate flow can't apply a kit that declares
+  // `setup.startup` commands at all — it fails outright with "kit-add recreate flow does not
+  // yet apply [startup]; recreate the sandbox from scratch via `sbx rm` + `sbx create --kit`".
+  // Unlike the no-kit-remove limitation (a real sbx gap this app just reflects honestly), this
+  // one is knowable in advance from the same `kitInspect` call already run to preview the kit —
+  // so it's worth blocking the button and explaining why up front instead of letting the user
+  // hit the raw CLI error after already confirming the "brief interruption" dialog.
+  const hasStartupCommands = (draft?.details?.commands?.startup?.length ?? 0) > 0
+
   async function handleAdd(): Promise<void> {
-    if (!draft?.details) return
+    if (!draft?.details || hasStartupCommands) return
     if (
       !confirm(
         `Add "${draft.details.manifest.name}" to ${sandboxName}? The sandbox's container will be recreated to apply it — a brief interruption, and this can't be undone through this app (sbx has no way to remove a kit once added).`
@@ -71,7 +93,8 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
         reference: draft.reference,
         sourceType: draft.sourceType,
         manifest: draft.details,
-        sandboxName
+        sandboxName,
+        libraryEntryId: draft.libraryEntryId
       })
       setDraft(null)
       setRefDraft('')
@@ -121,6 +144,18 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
             </div>
           </Card>
         ))}
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-slate-800 pt-4">
+        <h3 className="text-sm font-semibold text-slate-300">Available kits</h3>
+        <p className="text-xs text-slate-500">
+          From your kit library (see the Kits page in the left nav) — pick one to preview and add
+          to this sandbox below, same as picking a fresh folder/ZIP/reference would.
+        </p>
+        <ExistingKitPicker
+          selectedReferences={appliedKits.map((k) => k.reference)}
+          onSelect={(entry) => void pickExistingKit(entry)}
+        />
       </div>
 
       <div className="flex flex-col gap-2 border-t border-slate-800 pt-4">
@@ -181,9 +216,18 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
                 {draft.details.caps.network.deny?.join(', ') || 'none'}
               </p>
             )}
+            {hasStartupCommands && (
+              <p className="text-xs text-amber-400">
+                This kit declares startup commands, which <code>sbx kit add</code>'s recreate flow
+                can't apply to an already-existing sandbox — confirmed live via the CLI's own
+                error. The only way to use it here is to recreate this sandbox from scratch with
+                it attached at create time (Remove this sandbox, then create a new one with this
+                kit in the wizard).
+              </p>
+            )}
             <div className="flex items-center gap-2 pt-1">
               <Button
-                disabled={busy || draft.validation?.valid === false}
+                disabled={busy || draft.validation?.valid === false || hasStartupCommands}
                 onClick={() => void handleAdd()}
               >
                 {kitAdd.isPending ? 'Adding…' : `Add to ${sandboxName}`}
