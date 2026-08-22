@@ -251,6 +251,33 @@ async function start(name: string): Promise<void> {
   await run(['exec', name, 'true'], { timeoutMs: 60_000 })
 }
 
+/**
+ * Lists directory names directly under `path` inside the sandbox's own filesystem — for
+ * finding things (like a kit-installed skill) that live in the container itself rather than
+ * the bind-mounted workspace, so aren't visible by reading the host disk directly. The `sh -c`
+ * shell runs *inside* the sandbox via `sbx exec`, not on the host — this app's own no-shell
+ * invocation discipline is about never building a shell string on the host side (see the
+ * Security section), which this still honors; `path` here is always a fixed constant from
+ * this app's own code, never user input, so there's no injection risk from the in-sandbox
+ * shell either.
+ *
+ * NOT YET CONFIRMED LIVE — the exact in-sandbox path a kit-installed skill actually ends up in
+ * hasn't been verified against a real sandbox yet. Uses GNU find's `-printf`, which should be
+ * available via findutils on the Debian/Ubuntu-based sandbox images referenced elsewhere in
+ * this app (kit `apt-get` install steps), but that assumption isn't confirmed for this specific
+ * command either. `find` exits non-zero when `path` doesn't exist even with its own stderr
+ * suppressed, so callers should always expect this to reject for the ordinary "nothing there"
+ * case and treat that the same as an empty result, not a real failure.
+ */
+async function listDirNamesInSandbox(name: string, path: string): Promise<string[]> {
+  const cmd = `find ${path} -mindepth 1 -maxdepth 1 -type d -printf '%f\\n' 2>/dev/null`
+  const { stdout } = await run(['exec', name, 'sh', '-c', cmd], { timeoutMs: 15_000 })
+  return stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
 /** Always pass --force: our spawned process never has a TTY, so the interactive confirmation prompt would hang forever. */
 async function rm(names: string[]): Promise<void> {
   await run(['rm', '--force', ...names])
@@ -496,6 +523,7 @@ export const sbxCli = {
   create,
   stop,
   start,
+  listDirNamesInSandbox,
   rm,
   listPorts,
   publishPort,

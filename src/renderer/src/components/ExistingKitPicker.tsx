@@ -74,7 +74,7 @@ export function ExistingKitPicker({
             >
               <div className="flex min-w-0 items-center justify-between gap-2">
                 <span className="min-w-0 truncate font-medium text-slate-200">
-                  {entry.manifest.manifest.displayName ?? entry.manifest.manifest.name}
+                  {entry.manifest.manifest?.displayName ?? entry.manifest.manifest?.name ?? entry.originalReference}
                 </span>
                 {added && <Badge tone="success">added</Badge>}
                 {refreshing && <Badge tone="neutral">syncing…</Badge>}

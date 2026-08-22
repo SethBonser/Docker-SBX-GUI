@@ -46,6 +46,12 @@ interface ChatStoreState {
   ensureSession: (sandboxName: string) => void
   clearSession: (sandboxName: string) => void
   endTurn: (sandboxName: string) => void
+  // Unlike clearSession (which resets a session's transcript in place, for a sandbox that still
+  // exists), this removes the session entirely — for when the sandbox itself is gone. Confirmed
+  // live: removing a sandbox and creating a new one under the same name showed the *old*
+  // sandbox's chat transcript, since sessions are keyed only by name and nothing ever deleted
+  // the old entry — `ensureSession` saw the name already had an entry and left it alone.
+  removeSession: (sandboxName: string) => void
 }
 
 function emptySession(): ChatSessionState {
@@ -77,6 +83,14 @@ export const useChatStore = create<ChatStoreState>((set) => ({
       return {
         sessions: { ...state.sessions, [sandboxName]: { ...session, messages: [], mcpServers: [] } }
       }
+    }),
+
+  removeSession: (sandboxName) =>
+    set((state) => {
+      if (!(sandboxName in state.sessions)) return state
+      const sessions = { ...state.sessions }
+      delete sessions[sandboxName]
+      return { sessions }
     }),
 
   addUserMessage: (sandboxName, text) =>

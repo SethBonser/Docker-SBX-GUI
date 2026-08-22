@@ -43,6 +43,10 @@ export interface NotificationState extends ActiveView {
   markTerminalUnread: (sandboxName: string) => void
   clearChatUnread: (sandboxName: string) => void
   clearTerminalUnread: (sandboxName: string) => void
+  // Removes a sandbox's flags entirely rather than just clearing them to false — for when the
+  // sandbox itself is gone, so a new sandbox created under the same name starts with a genuinely
+  // fresh (absent) key instead of a leftover one, same cleanup chatStore/terminalStore also need.
+  forgetSandbox: (sandboxName: string) => void
 }
 
 export const useNotificationStore = create<NotificationState>((set) => ({
@@ -60,7 +64,15 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   clearChatUnread: (sandboxName) =>
     set((state) => ({ chatUnread: { ...state.chatUnread, [sandboxName]: false } })),
   clearTerminalUnread: (sandboxName) =>
-    set((state) => ({ terminalUnread: { ...state.terminalUnread, [sandboxName]: false } }))
+    set((state) => ({ terminalUnread: { ...state.terminalUnread, [sandboxName]: false } })),
+  forgetSandbox: (sandboxName) =>
+    set((state) => {
+      const chatUnread = { ...state.chatUnread }
+      const terminalUnread = { ...state.terminalUnread }
+      delete chatUnread[sandboxName]
+      delete terminalUnread[sandboxName]
+      return { chatUnread, terminalUnread }
+    })
 }))
 
 /** True if the given sandbox has unseen Chat or Terminal activity. */

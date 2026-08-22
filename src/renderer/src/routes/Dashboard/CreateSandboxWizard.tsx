@@ -496,7 +496,7 @@ function KitCard({ entry, onRemove }: { entry: KitEntry; onRemove: () => void })
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">
-            {entry.details?.manifest.displayName ?? entry.details?.manifest.name ?? entry.reference}
+            {entry.details?.manifest?.displayName ?? entry.details?.manifest?.name ?? entry.reference}
           </div>
           <div className="truncate text-xs text-slate-500">{entry.reference}</div>
         </div>
@@ -519,7 +519,7 @@ function KitCard({ entry, onRemove }: { entry: KitEntry; onRemove: () => void })
 
       {entry.details && (
         <div className="flex min-w-0 flex-col gap-1 break-words text-xs text-slate-400">
-          {entry.details.manifest.description && <p>{entry.details.manifest.description}</p>}
+          {entry.details.manifest?.description && <p>{entry.details.manifest.description}</p>}
           {entry.details.requires?.agent && <p>Requires agent: {entry.details.requires.agent}</p>}
           {entry.details.credentials && entry.details.credentials.length > 0 && (
             <p>Credentials: {entry.details.credentials.map((c) => c.service).join(', ')}</p>

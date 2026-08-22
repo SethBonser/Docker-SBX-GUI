@@ -274,7 +274,13 @@ export interface DiagnoseResult {
 }
 
 export interface KitDetails {
-  manifest: {
+  // Optional, not required: `sbx kit inspect --json` is parsed with a bare `JSON.parse(...) as
+  // KitDetails` (no runtime validation — see parsers.ts), and confirmed live that a kit-spec v2
+  // artifact can produce JSON that doesn't nest fields under `manifest` the way v1 always did.
+  // Every consumer of this field needs to handle it being absent instead of assuming the v1
+  // shape — TypeScript enforces that at every call site once this is optional, which is the
+  // whole point of marking it this way rather than leaving it required and hoping.
+  manifest?: {
     schemaVersion: string
     kind: 'mixin' | 'sandbox'
     name: string

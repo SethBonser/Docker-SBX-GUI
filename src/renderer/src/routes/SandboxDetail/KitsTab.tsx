@@ -81,7 +81,7 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
     if (!draft?.details || hasStartupCommands) return
     if (
       !confirm(
-        `Add "${draft.details.manifest.name}" to ${sandboxName}? The sandbox's container will be recreated to apply it — a brief interruption, and this can't be undone through this app (sbx has no way to remove a kit once added).`
+        `Add "${draft.details.manifest?.name ?? draft.reference}" to ${sandboxName}? The sandbox's container will be recreated to apply it — a brief interruption, and this can't be undone through this app (sbx has no way to remove a kit once added).`
       )
     ) {
       return
@@ -130,12 +130,12 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="font-medium text-slate-200">
-                  {k.manifest.manifest.displayName ?? k.manifest.manifest.name}
+                  {k.manifest.manifest?.displayName ?? k.manifest.manifest?.name ?? k.originalReference}
                 </span>
                 <Badge tone="neutral">{k.sourceType}</Badge>
-                <Badge tone="neutral">{k.manifest.manifest.kind}</Badge>
+                {k.manifest.manifest?.kind && <Badge tone="neutral">{k.manifest.manifest.kind}</Badge>}
               </div>
-              {k.manifest.manifest.description && (
+              {k.manifest.manifest?.description && (
                 <p className="mt-1 text-xs text-slate-400">{k.manifest.manifest.description}</p>
               )}
               <p className="mt-1 truncate text-xs text-slate-600" title={k.originalReference}>
@@ -192,18 +192,25 @@ export function KitsTab({ sandboxName }: { sandboxName: string }): JSX.Element {
           <Card className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <span className="font-medium text-slate-200">
-                {draft.details.manifest.displayName ?? draft.details.manifest.name}
+                {draft.details.manifest?.displayName ?? draft.details.manifest?.name ?? draft.reference}
               </span>
               <Badge tone="neutral">{draft.sourceType}</Badge>
-              <Badge tone="neutral">{draft.details.manifest.kind}</Badge>
+              {draft.details.manifest?.kind && <Badge tone="neutral">{draft.details.manifest.kind}</Badge>}
               {draft.validation && (
                 <Badge tone={draft.validation.valid ? 'success' : 'danger'}>
                   {draft.validation.valid ? 'valid' : 'invalid'}
                 </Badge>
               )}
             </div>
-            {draft.details.manifest.description && (
+            {draft.details.manifest?.description && (
               <p className="text-xs text-slate-400">{draft.details.manifest.description}</p>
+            )}
+            {!draft.details.manifest && (
+              <p className="text-xs text-amber-400">
+                This kit's inspected details don't match the shape this app expects (possibly a
+                newer kit-spec version) — showing what could be read; some fields above may be
+                missing or shown as the raw reference instead of a real name.
+              </p>
             )}
             {draft.details.credentials && draft.details.credentials.length > 0 && (
               <p className="text-xs text-slate-500">

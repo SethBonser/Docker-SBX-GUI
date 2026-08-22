@@ -60,6 +60,7 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
   const startedRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mentionListRef = useRef<HTMLDivElement>(null)
 
   // "/" mention autocomplete for skills found under this sandbox's own workspace (see
   // src/main/skills.ts) — mentionQuery is the text typed after "/" (empty string right after
@@ -73,6 +74,15 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
     mentionQuery === null
       ? []
       : (skills.data ?? []).filter((s) => s.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 8)
+
+  // Confirmed live: arrowing through the mention dropdown moved the highlight but never scrolled
+  // the list to follow it — only the mouse wheel actually moved the viewport, so arrowing past
+  // the visible items just highlighted something off-screen with no visual feedback at all.
+  useEffect(() => {
+    mentionListRef.current
+      ?.querySelector('[data-highlighted="true"]')
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [highlightIndex, mentionQuery])
 
   const unsupported = !SUPPORTED_AGENTS.includes(agent)
   // /login, the "Sign in to Claude" banner, and the Permissions picker all drive Claude-specific
@@ -340,12 +350,16 @@ export function ChatPanel({ sandboxName, agent }: { sandboxName: string; agent: 
 
       <div className="relative flex gap-2 border-t border-slate-800 pt-3">
         {mentionQuery !== null && (
-          <div className="absolute bottom-full left-0 z-10 mb-1 max-h-48 w-64 overflow-y-auto rounded-md border border-slate-700 bg-slate-900 shadow-lg">
+          <div
+            ref={mentionListRef}
+            className="absolute bottom-full left-0 z-10 mb-1 max-h-48 w-64 overflow-y-auto rounded-md border border-slate-700 bg-slate-900 shadow-lg"
+          >
             {mentionMatches.length > 0 ? (
               mentionMatches.map((name, i) => (
                 <button
                   key={name}
                   type="button"
+                  data-highlighted={i === highlightIndex}
                   onMouseDown={(e) => {
                     // Prevents the textarea from blurring before selectSkill reads its
                     // (still-current) cursor position from selectionStart.

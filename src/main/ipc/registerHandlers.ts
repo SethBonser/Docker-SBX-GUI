@@ -97,7 +97,18 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.sbxRm, async (_event, names: string[]) => {
     try {
       await sbxCli.rm(names)
-      for (const name of names) clearSandboxGpuEnabled(name)
+      for (const name of names) {
+        clearSandboxGpuEnabled(name)
+        // Confirmed live: creating a new sandbox under a just-removed name could inherit a
+        // stale chat session — AgentSessionManager.ensureStarted() only starts a fresh adapter
+        // when `!this.sessions.has(sandboxName)`, and nothing removed the old (now-defunct)
+        // entry when the sandbox itself was deleted, so a same-named sandbox found one already
+        // "registered" and never actually started a real session for it. Terminal has the same
+        // shape of bug via its own session map. Both are keyed only by name, same as the
+        // renderer-side chatStore/terminalStore/notificationStore leaks fixed alongside this.
+        await agentSessionManager.stop(name)
+        terminalSessionManager.stop(name)
+      }
     } catch (err) {
       throw toIpcError(err)
     }

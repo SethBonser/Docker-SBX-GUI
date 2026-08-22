@@ -1,4 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useChatStore } from './chatStore'
+import { useTerminalStore } from './terminalStore'
+import { useNotificationStore } from './notificationStore'
 import type {
   ClaudePermissionMode,
   CreateSandboxOptions,
@@ -34,11 +37,23 @@ export function useStopSandboxes() {
   })
 }
 
+// Confirmed live: removing a sandbox and creating a new one under the same name showed the old
+// sandbox's chat transcript and terminal scrollback, since those are stored keyed only by name
+// with nothing to ever delete the old entry — only the main-process side (agent/terminal
+// session managers, see registerHandlers.ts's sbxRm handler) was cleaned up before this, not
+// any of the renderer-side stores. All three name-keyed stores get cleaned up here now.
 export function useRemoveSandboxes() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (names: string[]) => window.sbxApi.removeSandboxes(names),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sandboxes'] })
+    onSuccess: (_data, names) => {
+      queryClient.invalidateQueries({ queryKey: ['sandboxes'] })
+      for (const name of names) {
+        useChatStore.getState().removeSession(name)
+        useTerminalStore.getState().removeBuffer(name)
+        useNotificationStore.getState().forgetSandbox(name)
+      }
+    }
   })
 }
 

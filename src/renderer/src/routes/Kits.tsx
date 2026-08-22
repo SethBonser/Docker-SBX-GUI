@@ -39,7 +39,7 @@ export function Kits(): JSX.Element {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="truncate font-medium text-slate-200">
-                  {k.manifest.manifest.displayName ?? k.manifest.manifest.name}
+                  {k.manifest.manifest?.displayName ?? k.manifest.manifest?.name ?? k.originalReference}
                 </div>
                 <div className="truncate text-xs text-slate-500" title={k.originalReference}>
                   {k.originalReference}
@@ -49,7 +49,7 @@ export function Kits(): JSX.Element {
                 className="flex-shrink-0 text-xs text-red-400 hover:text-red-300"
                 disabled={removeEntry.isPending}
                 onClick={() => {
-                  if (confirm(`Remove "${k.manifest.manifest.name}" from this library?`)) {
+                  if (confirm(`Remove "${k.manifest.manifest?.name ?? k.originalReference}" from this library?`)) {
                     removeEntry.mutate(k.id)
                   }
                 }}
@@ -60,13 +60,13 @@ export function Kits(): JSX.Element {
 
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="neutral">{k.sourceType}</Badge>
-              <Badge tone="neutral">{k.manifest.manifest.kind}</Badge>
+              {k.manifest.manifest?.kind && <Badge tone="neutral">{k.manifest.manifest.kind}</Badge>}
               <span className="text-xs text-slate-600">
                 last used {new Date(k.lastUsedAt).toLocaleDateString()}
               </span>
             </div>
 
-            {k.manifest.manifest.description && (
+            {k.manifest.manifest?.description && (
               <p className="text-xs text-slate-400">{k.manifest.manifest.description}</p>
             )}
 

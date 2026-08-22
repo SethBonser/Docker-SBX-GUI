@@ -94,8 +94,60 @@ export function parsePortsJson(stdout: string): PortMapping[] {
   return parsed.map(toPortMapping)
 }
 
+// Kit-spec v2's top-level shape, confirmed live against a real `sbx kit inspect --json` output
+// (a git-referenced kit declaring `"schemaVersion": "2"`) — meaningfully different from the
+// kit-spec v1 shape `KitDetails` was originally modeled on: the identity fields v1 nests under
+// a `manifest` key (schemaVersion/kind/name/displayName/description) are flat at the top level
+// instead, and two sections were renamed outright — `caps` → `permissions`, `commands` →
+// `setup`. Confirmed exactly for the network-allow list and install-step shapes (both matched
+// `KitDetails`'s existing sub-shapes exactly, just relocated). NOT confirmed: `credentials`,
+// `environment`, `requires`, and `agentContext` — the one real v2 example seen so far didn't
+// declare any of them, so this assumes they stayed at the same top level unchanged rather than
+// also being renamed. Worth re-checking against a v2 kit that actually declares one of those.
+interface RawKitDetailsV2 {
+  schemaVersion: string
+  kind: 'mixin' | 'sandbox'
+  name: string
+  displayName?: string
+  description?: string
+  requires?: KitDetails['requires']
+  permissions?: { network?: { allow?: string[]; deny?: string[] } }
+  credentials?: KitDetails['credentials']
+  environment?: KitDetails['environment']
+  setup?: KitDetails['commands']
+  agentContext?: string
+}
+
+/** `sbx kit inspect --json`'s output shape follows whatever kit-spec version the kit itself
+ * declares — this doesn't appear to depend on the installed `sbx` version, since a v0.38.0
+ * install returned genuine kit-spec v2 output for a v2-authored kit fetched via a `git+`
+ * reference. Normalizing both known shapes into `KitDetails`'s existing (v1) layout here means
+ * every consumer elsewhere in the app keeps working with one consistent shape regardless of
+ * which spec version a given kit happens to use, rather than needing to know or care.
+ */
+function normalizeKitDetails(raw: KitDetails | RawKitDetailsV2): KitDetails {
+  if ('manifest' in raw) return raw
+  const v2 = raw as RawKitDetailsV2
+  return {
+    manifest: {
+      schemaVersion: v2.schemaVersion,
+      kind: v2.kind,
+      name: v2.name,
+      displayName: v2.displayName,
+      description: v2.description
+    },
+    requires: v2.requires,
+    caps: v2.permissions,
+    credentials: v2.credentials,
+    environment: v2.environment,
+    commands: v2.setup,
+    agentContext: v2.agentContext
+  }
+}
+
 export function parseKitInspectJson(stdout: string): KitDetails {
-  return parseJsonLenient<KitDetails>(stdout, 'sbx kit inspect --json')
+  const parsed = parseJsonLenient<KitDetails | RawKitDetailsV2>(stdout, 'sbx kit inspect --json')
+  return normalizeKitDetails(parsed)
 }
 
 interface RawPolicyRule {

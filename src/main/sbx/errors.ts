@@ -4,6 +4,7 @@ export type SbxErrorKind =
   | 'NotLoggedIn'
   | 'SandboxNotFound'
   | 'KitInvalid'
+  | 'KitIncompatible'
   | 'Generic'
 
 export class SbxCliError extends Error {
@@ -57,6 +58,21 @@ export function classifyFailure(stderr: string, exitCode: number | null): SbxCli
   }
   if (text.includes('kit') && (text.includes('invalid') || text.includes('validation failed'))) {
     return new SbxCliError('KitInvalid', 'Kit artifact failed validation.', { exitCode, stderr })
+  }
+  // Confirmed live from a real OCI kit reference: "no v2 kit layer found in manifest (expected
+  // media type application/vnd.oci.image.layer.v1.tar+gzip)". Despite the confusing wording
+  // (it's looking for a "v2" layer but names a "v1" media type), this is the installed `sbx`
+  // CLI's own kit-artifact layer format not matching what the referenced OCI image actually has
+  // — almost certainly because that kit was packed with a newer `sbx kit pack` (kit-spec v2,
+  // see the Roadmap's v0.39.0 compatibility note) than what's installed locally understands. Not
+  // a validation failure on the kit's own merits, so a distinct kind from KitInvalid, and a
+  // message that actually points at the real cause instead of the raw manifest/media-type text.
+  if (text.includes('kit layer') && text.includes('manifest')) {
+    return new SbxCliError(
+      'KitIncompatible',
+      "This kit's OCI image isn't in a layer format this installed sbx version recognizes — it may have been packed with a newer sbx (kit-spec v2) than what's installed locally. Try upgrading sbx, or use a kit reference packed for your installed version.",
+      { exitCode, stderr }
+    )
   }
   return new SbxCliError('Generic', stderr.trim() || `sbx exited with code ${exitCode}`, { exitCode, stderr })
 }
